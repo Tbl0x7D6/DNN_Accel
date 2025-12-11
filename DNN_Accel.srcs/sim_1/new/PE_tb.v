@@ -31,6 +31,7 @@ module PE_tb();
     reg start;
     reg kernel_type;  // 0: 3x3, 1: 5x5
     reg stride;       // 0: 1,   1: 2
+    reg use_prev_psum;  // 0: ignore psum_data, 1: use psum_data
     
     // Data input
     reg [7:0] ifm_data1 [35:0];
@@ -55,6 +56,7 @@ module PE_tb();
         .start(start),
         .kernel_type(kernel_type),
         .stride(stride),
+        .use_prev_psum(use_prev_psum),
         .ifm_data1(ifm_data1),
         .ifm_data2(ifm_data2),
         .filter_data(filter_data),
@@ -73,6 +75,7 @@ module PE_tb();
             start = 0;
             kernel_type = 0;
             stride = 0;
+            use_prev_psum = 0;
             psum_data1 = 0;
             psum_data2 = 0;
             
@@ -124,6 +127,7 @@ module PE_tb();
         
         kernel_type = 0;  // 3x3
         stride = 0;       // stride=1
+        use_prev_psum = 0;
         psum_data1 = 0;
         psum_data2 = 0;
         
@@ -180,6 +184,7 @@ module PE_tb();
         
         kernel_type = 0;  // 3x3
         stride = 1;       // stride=2
+        use_prev_psum = 1;  // Test with previous psum
         psum_data1 = 0;
         psum_data2 = 0;
         
@@ -240,6 +245,7 @@ module PE_tb();
         
         kernel_type = 1;  // 5x5
         stride = 0;       // stride=1
+        use_prev_psum = 1;  // Test with previous psum
         psum_data1 = 0;
         psum_data2 = 0;
         
@@ -291,6 +297,7 @@ module PE_tb();
         
         kernel_type = 1;  // 5x5
         stride = 1;       // stride=2
+        use_prev_psum = 0;
         psum_data1 = 0;
         psum_data2 = 0;
         

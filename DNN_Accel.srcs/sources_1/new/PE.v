@@ -28,6 +28,7 @@ module PE (
     input wire start,
     input wire kernel_type, // 0: 3x3, 1: 5x5
     input wire stride,      // 0: 1,   1: 2
+    input wire use_prev_psum,  // 0: ignore psum_data, 1: use psum_data
     input wire [7:0] ifm_data1 [35:0],
     input wire [7:0] ifm_data2 [35:0],
     input wire [7:0] filter_data [4:0],
@@ -81,8 +82,8 @@ module PE (
 
         // make sure psum_out is available in several cycles for next PE
         if (mac_count == dsp_out_mac_count_delay) begin
-            psum_temp1 <= psum_data1 + P[15:0];
-            psum_temp2 <= psum_data2 + P[31:16];
+            psum_temp1 <= (use_prev_psum ? psum_data1 : 0) + P[15:0];
+            psum_temp2 <= (use_prev_psum ? psum_data2 : 0) + P[31:16];
         end else if (mac_count + 1 == dsp_out_mac_count_delay) begin
             psum_out1 <= psum_temp1 + P[15:0];
             psum_out2 <= psum_temp2 + P[31:16];

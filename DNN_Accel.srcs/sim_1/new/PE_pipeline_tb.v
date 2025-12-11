@@ -25,6 +25,7 @@ module PE_pipeline_tb();
     reg clk;
     reg kernel_type;  // 0: 3x3, 1: 5x5
     reg stride;       // 0: 1,   1: 2
+    reg use_prev_psum [2:0];  // 0: ignore psum_data, 1: use psum_data
 
     reg start [2:0];
     reg [7:0] ifm [3:0][35:0];
@@ -56,6 +57,7 @@ module PE_pipeline_tb();
                 .start(start[i]),
                 .kernel_type(kernel_type),
                 .stride(stride),
+                .use_prev_psum(use_prev_psum[i]),
                 .ifm_data1(pe_ifm_data1[i]),
                 .ifm_data2(pe_ifm_data2[i]),
                 .filter_data(pe_filter_data[i]),
@@ -74,6 +76,9 @@ module PE_pipeline_tb();
         start[2] = 0;
         kernel_type = 0;
         stride = 0;
+        use_prev_psum[0] = 0;
+        use_prev_psum[1] = 1;
+        use_prev_psum[2] = 1;
         
         // init IFM
         for (integer i = 0; i < 36; i = i + 1) begin
@@ -125,8 +130,6 @@ module PE_pipeline_tb();
     end
 
     // psum pipeline
-    assign pe_psum_data1[0] = 0;
-    assign pe_psum_data2[0] = 0;
     assign pe_psum_data1[1] = pe_psum_out1[0];
     assign pe_psum_data2[1] = pe_psum_out2[0];
     assign pe_psum_data1[2] = pe_psum_out1[1];
