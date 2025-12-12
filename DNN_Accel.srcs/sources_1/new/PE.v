@@ -20,17 +20,13 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
-// kernel_type/stride MUST change AFTER all previous psum computation is done
-// since error dsp_out_mac_count_delay value leads to incorrect psum registers' assignment
-// this error is unlikely to happen since inferences of different layers are separated
 module PE (
     input wire clk,
     input wire start,
-    input wire kernel_type, // 0: 3x3, 1: 5x5
-    input wire stride,      // 0: 1,   1: 2
-    input wire use_prev_psum,  // 0: ignore psum_data, 1: use psum_data
-    input wire [7:0] ifm_data1 [35:0],
-    input wire [7:0] ifm_data2 [35:0],
+    input wire kernel_type,          // 0: 3x3, 1: 5x5
+    input wire use_prev_psum,        // 0: ignore psum_data, 1: use psum_data
+    input wire [7:0] ifm_data1 [4:0],
+    input wire [7:0] ifm_data2 [4:0],
     input wire [7:0] filter_data [4:0],
     input wire [20:0] psum_data1,
     input wire [20:0] psum_data2,
@@ -38,7 +34,6 @@ module PE (
     output reg [20:0] psum_out2
 );
 
-    reg [4:0] ofm_position;
     reg [2:0] mac_count;
 
     reg [20:0] psum_temp1;
@@ -62,21 +57,19 @@ module PE (
     assign dsp_out_mac_count_delay = (kernel_type == 0 ? 1 : 4);
 
     // compute two int8 multiplications concurrently
-    assign A[7:0] = start ? ifm_data1[0] : ifm_data1[ofm_position + mac_count];
+    assign A[7:0] = start ? ifm_data1[0] : ifm_data1[mac_count];
     assign A[15:8] = 8'b0;
-    assign A[23:16] = start ? ifm_data2[0] : ifm_data2[ofm_position + mac_count];
+    assign A[23:16] = start ? ifm_data2[0] : ifm_data2[mac_count];
     assign B[7:0] = start ? filter_data[0] : filter_data[mac_count];
 
     always @(posedge clk) begin
         // FSM
         if (start) begin
-            ofm_position <= 0;
             mac_count <= 0;
         end else begin
             mac_count <= mac_count + 1;
             if (mac_count == (kernel_type == 0 ? 2 : 4)) begin
                 mac_count <= 0;
-                ofm_position <= ofm_position + (stride == 0 ? 1 : 2);
             end
         end
 

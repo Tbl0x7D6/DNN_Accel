@@ -37,8 +37,8 @@ module PE_pipeline_tb();
     reg [7:0] filter2 [2:0][4:0];
 
     // Signals for PE connections
-    reg [7:0] pe_ifm_data1 [2:0][35:0];
-    reg [7:0] pe_ifm_data2 [2:0][35:0];
+    reg [7:0] pe_ifm_data1 [2:0][4:0];
+    reg [7:0] pe_ifm_data2 [2:0][4:0];
     reg [7:0] pe_filter_data [2:0][4:0];
     wire [20:0] pe_psum_data1 [2:0];
     wire [20:0] pe_psum_data2 [2:0];
@@ -56,7 +56,6 @@ module PE_pipeline_tb();
                 .clk(clk),
                 .start(start[i]),
                 .kernel_type(kernel_type),
-                .stride(stride),
                 .use_prev_psum(use_prev_psum[i]),
                 .ifm_data1(pe_ifm_data1[i]),
                 .ifm_data2(pe_ifm_data2[i]),
@@ -103,7 +102,7 @@ module PE_pipeline_tb();
 
         // another IFM and filter
         for (integer i = 0; i < 36; i = i + 1) begin
-            ifm2[0][i] = i % 2;    // 0, 1, 0, 1, 0, 1, 0, 1, 0, ...
+            ifm2[0][i] = i % 2;   // 0, 1, 0, 1, 0, 1, 0, 1, 0, ...
             ifm2[1][i] = i % 3;   // 0, 1, 2, 0, 1, 2, 0, 1, 2, ...
             ifm2[2][i] = i % 4;   // 0, 1, 2, 3, 0, 1, 2, 3, 0, ...
             ifm2[3][i] = i % 5;   // 0, 1, 2, 3, 4, 0, 1, 2, 3, ...
@@ -115,17 +114,6 @@ module PE_pipeline_tb();
             filter2[i][2] = 1;
             filter2[i][3] = 0;
             filter2[i][4] = 0;
-        end
-
-        // connect data to PE inputs
-        for (integer i = 0; i < 3; i = i + 1) begin
-            for (integer j = 0; j < 36; j = j + 1) begin
-                pe_ifm_data1[i][j] = ifm[i][j];
-                pe_ifm_data2[i][j] = ifm[i+1][j];
-            end
-            for (integer j = 0; j < 5; j = j + 1) begin
-                pe_filter_data[i][j] = filter[i][j];
-            end
         end
     end
 
@@ -160,6 +148,48 @@ module PE_pipeline_tb();
         @(posedge clk);
         start[2] = 0;
     end
+
+    initial begin
+        #20;
+        @(posedge clk);
+        for (integer j = 0; j < 32; j++) begin
+            for (integer i = 0; i < 3; i = i + 1) begin
+                pe_ifm_data1[0][i] = ifm[0][j + i];
+                pe_ifm_data2[0][i] = ifm[1][j + i];
+                pe_filter_data[0][i] = filter[0][i];
+            end
+            repeat(3) @(posedge clk);
+        end
+    end
+
+    initial begin
+        #20;
+        repeat(3) @(posedge clk);
+        @(posedge clk);
+        for (integer j = 0; j < 32; j++) begin
+            for (integer i = 0; i < 3; i = i + 1) begin
+                pe_ifm_data1[1][i] = ifm[1][j + i];
+                pe_ifm_data2[1][i] = ifm[2][j + i];
+                pe_filter_data[1][i] = filter[1][i];
+            end
+            repeat(3) @(posedge clk);
+        end
+    end
+
+    initial begin
+        #20;
+        repeat(6) @(posedge clk);
+        @(posedge clk);
+        for (integer j = 0; j < 32; j++) begin
+            for (integer i = 0; i < 3; i = i + 1) begin
+                pe_ifm_data1[2][i] = ifm[2][j + i];
+                pe_ifm_data2[2][i] = ifm[3][j + i];
+                pe_filter_data[2][i] = filter[2][i];
+            end
+            repeat(3) @(posedge clk);
+        end
+    end
+
 
     // 测试第二组数据输入
     // 假设第一组 ofm 有 12 列，那么应该再等 12*3 = 36 cycles 后输入 start
@@ -218,5 +248,50 @@ module PE_pipeline_tb();
         #500;
         $finish;
     end
+
+    initial begin
+        #20;
+        repeat(36) @(posedge clk);
+        @(posedge clk);
+        for (integer j = 0; j < 32; j++) begin
+            for (integer i = 0; i < 3; i = i + 1) begin
+                pe_ifm_data1[0][i] = ifm2[0][j + i];
+                pe_ifm_data2[0][i] = ifm2[1][j + i];
+                pe_filter_data[0][i] = filter2[0][i];
+            end
+            repeat(3) @(posedge clk);
+        end
+    end
+
+    initial begin
+        #20;
+        repeat(36) @(posedge clk);
+        repeat(3) @(posedge clk);
+        @(posedge clk);
+        for (integer j = 0; j < 32; j++) begin
+            for (integer i = 0; i < 3; i = i + 1) begin
+                pe_ifm_data1[1][i] = ifm2[1][j + i];
+                pe_ifm_data2[1][i] = ifm2[2][j + i];
+                pe_filter_data[1][i] = filter2[1][i];
+            end
+            repeat(3) @(posedge clk);
+        end
+    end
+
+    initial begin
+        #20;
+        repeat(36) @(posedge clk);
+        repeat(6) @(posedge clk);
+        @(posedge clk);
+        for (integer j = 0; j < 32; j++) begin
+            for (integer i = 0; i < 3; i = i + 1) begin
+                pe_ifm_data1[2][i] = ifm2[2][j + i];
+                pe_ifm_data2[2][i] = ifm2[3][j + i];
+                pe_filter_data[2][i] = filter2[2][i];
+            end
+            repeat(3) @(posedge clk);
+        end
+    end
+
 
 endmodule
