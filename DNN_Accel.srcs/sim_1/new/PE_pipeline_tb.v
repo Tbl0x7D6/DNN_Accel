@@ -132,20 +132,26 @@ module PE_pipeline_tb();
     initial begin
         #20;
         @(posedge clk);
+        #1;
         start[0] = 1;
         @(posedge clk);
+        #1;
         start[0] = 0;
         @(posedge clk);
 
         @(posedge clk);
+        #1;
         start[1] = 1;
         @(posedge clk);
+        #1;
         start[1] = 0;
         @(posedge clk);
 
         @(posedge clk);
+        #1;
         start[2] = 1;
         @(posedge clk);
+        #1;
         start[2] = 0;
     end
 
@@ -202,6 +208,7 @@ module PE_pipeline_tb();
         repeat(36) @(posedge clk);
 
         @(posedge clk);
+        #1;
         start[0] = 1;
 
         for (integer j = 0; j < 36; j = j + 1) begin
@@ -213,10 +220,12 @@ module PE_pipeline_tb();
         end
 
         @(posedge clk);
+        #1;
         start[0] = 0;
         @(posedge clk);
 
         @(posedge clk);
+        #1;
         start[1] = 1;
 
         for (integer j = 0; j < 36; j = j + 1) begin
@@ -228,10 +237,12 @@ module PE_pipeline_tb();
         end
 
         @(posedge clk);
+        #1;
         start[1] = 0;
         @(posedge clk);
 
         @(posedge clk);
+        #1;
         start[2] = 1;
 
         for (integer j = 0; j < 36; j = j + 1) begin
@@ -243,6 +254,7 @@ module PE_pipeline_tb();
         end
         @(posedge clk);
 
+        #1;
         start[2] = 0;
 
         #500;

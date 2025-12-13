@@ -65,7 +65,7 @@ module PE (
     always @(posedge clk) begin
         // FSM
         if (start) begin
-            mac_count <= 0;
+            mac_count <= 1;
         end else begin
             mac_count <= mac_count + 1;
             if (mac_count == (kernel_type == 0 ? 2 : 4)) begin
