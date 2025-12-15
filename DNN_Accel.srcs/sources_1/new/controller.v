@@ -23,11 +23,7 @@
 module controller (
     input wire clk,
     input wire filter_clk,
-    input wire reset,
-    // these 3 lines are just for convenient testing
-    // will consume lots of time in synthesis
-    input wire [7:0] input_image [31:0][31:0],
-    output reg [7:0] output_buffer [7:0][31:0][31:0]
+    input wire reset
 );
 
     // PE array size
@@ -46,39 +42,39 @@ module controller (
 
     localparam IFM_SIZE = 32;
 
+    // quantization, Q = Q_in + Q_w - Q_out
+    // psum_out should be shifted right by Q bits
+    localparam Q = 9;
+
     // start signals for each row of a PE tile
     reg start [MAX_PE_TILE_HEIGHT-1:0];
 
     // original layout
-    // reg [7:0] input_image [31:0][31:0];
+    reg signed [7:0] input_image [31:0][31:0];
 
     // data buffer of bram, can update every KERNEL_SIZE cycles
-    reg [7:0] filter_buffer [HEIGHT-1:0][WIDTH/2-1:0][4:0];
+    reg signed [7:0] filter_buffer [HEIGHT-1:0][WIDTH/2-1:0][4:0];
 
     // output data buffer
     // currently only work for conv1 output (8x32x32)
-    // reg [7:0] output_buffer [7:0][31:0][31:0];
+    reg signed [7:0] output_buffer [7:0][31:0][31:0];
 
     // same ifm data for all PEs
-    reg [7:0] pe_ifm_data1 [MAX_PE_TILE_HEIGHT-1:0][MAX_PE_TILE_WIDTH-1:0][4:0];
-    reg [7:0] pe_ifm_data2 [MAX_PE_TILE_HEIGHT-1:0][MAX_PE_TILE_WIDTH-1:0][4:0];
+    reg signed [7:0] pe_ifm_data1 [MAX_PE_TILE_HEIGHT-1:0][MAX_PE_TILE_WIDTH-1:0][4:0];
+    reg signed [7:0] pe_ifm_data2 [MAX_PE_TILE_HEIGHT-1:0][MAX_PE_TILE_WIDTH-1:0][4:0];
 
     // same filter data for each 2 PEs
-    reg [7:0] pe_filter_data [HEIGHT-1:0][WIDTH/2-1:0][4:0];
-
-    // base address for ifm / ofm
-    // wire [15:0] ifm_base_addr = 0;
-    // wire [15:0] ofm_base_addr = 1;
+    reg signed [7:0] pe_filter_data [HEIGHT-1:0][WIDTH/2-1:0][4:0];
 
     reg [15:0] cycle_count;
     reg [15:0] load_count;
     reg [15:0] store_count;
 
     // PE output signals for pipeline connections
-    wire [20:0] psum_out1 [HEIGHT-1:0][WIDTH-1:0];
-    wire [20:0] psum_out2 [HEIGHT-1:0][WIDTH-1:0];
-    wire [20:0] psum_in1 [HEIGHT-1:0][WIDTH-1:0];
-    wire [20:0] psum_in2 [HEIGHT-1:0][WIDTH-1:0];
+    wire signed [20:0] psum_out1 [HEIGHT-1:0][WIDTH-1:0];
+    wire signed [20:0] psum_out2 [HEIGHT-1:0][WIDTH-1:0];
+    wire signed [20:0] psum_in1 [HEIGHT-1:0][WIDTH-1:0];
+    wire signed [20:0] psum_in2 [HEIGHT-1:0][WIDTH-1:0];
 
     // PE array
     genvar i, j;
@@ -181,6 +177,21 @@ module controller (
         end
     endfunction
 
+    function [7:0] quantize_relu;
+        input wire signed [20:0] psum;
+
+        begin
+            automatic integer shifted = psum >>> Q;
+            if (shifted < 0) begin
+                quantize_relu = 0;
+            end else if (shifted > 127) begin
+                quantize_relu = 8'd127;
+            end else begin
+                quantize_relu = shifted[7:0];
+            end
+        end
+    endfunction
+
     always @(posedge clk) begin
         if (reset || !filter_first_load_done) begin
             cycle_count <= 0;
@@ -236,8 +247,8 @@ module controller (
                             automatic integer img_index = img_r * (WIDTH / PE_TILE_WIDTH) + img_c;
                             automatic integer r = j % PE_TILE_WIDTH;
 
-                            output_buffer[img_index][r][store_count] <= psum_out1[i][j];
-                            output_buffer[img_index][r + PE_TILE_WIDTH][store_count] <= psum_out2[i][j];
+                            output_buffer[img_index][r][store_count] <= quantize_relu(psum_out1[i][j]);
+                            output_buffer[img_index][r + PE_TILE_WIDTH][store_count] <= quantize_relu(psum_out2[i][j]);
                         end
                     end
                 end

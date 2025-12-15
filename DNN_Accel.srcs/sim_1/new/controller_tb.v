@@ -27,8 +27,9 @@ module controller_tb;
     wire locked;
     wire clk_1;
     wire clk_2;
-    reg [7:0] input_image [31:0][31:0];
-    wire [7:0] output_buffer [7:0][31:0][31:0];
+    wire signed [7:0] output_buffer [7:0][31:0][31:0];
+
+    assign output_buffer = uut.output_buffer;
 
     // 应该根据 locked 生成计算单元的 reset 信号
     clk_wiz_0 mmcm_inst (
@@ -42,9 +43,7 @@ module controller_tb;
     controller uut (
         .clk(clk_2),
         .filter_clk(clk_1),
-        .reset(reset),
-        .input_image(input_image),
-        .output_buffer(output_buffer)
+        .reset(reset)
     );
 
     initial begin
@@ -53,7 +52,7 @@ module controller_tb;
         image_file = $fopen("image.txt", "r");
         for (i = 0; i < 32; i = i + 1) begin
             for (j = 0; j < 32; j = j + 1) begin
-                $fscanf(image_file, "%d", input_image[i][j]);
+                $fscanf(image_file, "%d", uut.input_image[i][j]);
             end
         end
 
@@ -63,7 +62,7 @@ module controller_tb;
             temp = 0;
             for (idx = 0; idx < 8; idx = idx + 1) begin
                 for (c = 0; c < 5; c = c + 1) begin
-                    reg [7:0] t;
+                    reg signed [7:0] t;
                     $fscanf(filter_file, "%d", t);
                     temp[(idx * 5 + c) * 8 +: 8] = t;
                 end

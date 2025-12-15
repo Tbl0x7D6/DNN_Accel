@@ -27,8 +27,8 @@ import random
 
 random.seed(114514)
 
-image = [[random.randint(0, 255) for _ in range(32)] for _ in range(32)]
-filter = [[[random.randint(0, 15) for _ in range(5)] for _ in range(5)] for _ in range(8)]
+image = [[random.randint(-50, 50) for _ in range(32)] for _ in range(32)]
+filter = [[[random.randint(-50, 50) for _ in range(5)] for _ in range(5)] for _ in range(8)]
 
 with open("image.txt", "w") as f:
     for row in image:
@@ -49,10 +49,13 @@ def conv(i, j, oc):
                 sum += image[i + fi - 2][j + fj - 2] * filter[oc][fi][fj]
     return sum
 
+def quantize_relu(x):
+    return min(max(0, x) >> 9, 127)
+
 for oc in range(8):
     for i in range(32):
         row = []
         for j in range(32):
-            row.append(conv(i, j, oc) % 256)
+            row.append(quantize_relu(conv(i, j, oc)))
         print(row)
     print()
