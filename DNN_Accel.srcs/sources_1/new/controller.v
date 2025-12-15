@@ -22,10 +22,10 @@
 
 module controller (
     input wire clk,
+    input wire filter_clk,
     input wire reset,
     // these 3 lines are just for convenient testing
     // will consume lots of time in synthesis
-    input wire [7:0] filter_buffer [127:0][4:0],
     input wire [7:0] input_image [31:0][31:0],
     output reg [7:0] output_buffer [7:0][31:0][31:0]
 );
@@ -53,7 +53,7 @@ module controller (
     // reg [7:0] input_image [31:0][31:0];
 
     // data buffer of bram, can update every KERNEL_SIZE cycles
-    // reg [7:0] filter_buffer [(HEIGHT/3 * WIDTH/2) - 1:0][4:0];
+    reg [7:0] filter_buffer [HEIGHT-1:0][WIDTH/2-1:0][4:0];
 
     // output data buffer
     // currently only work for conv1 output (8x32x32)
@@ -110,6 +110,62 @@ module controller (
         end
     endgenerate
 
+    // filter BRAM
+    reg filter_data_we;
+    reg [3071:0] filter_data_din;
+    wire [9:0] filter_data_addr;
+    wire [3071:0] filter_data_dout;
+
+    reg filter_first_load_done;
+    reg [9:0] filter_addr;
+    reg [15:0] filter_cycle_count;
+
+    localparam CONV1_FILTER_BASE_ADDR = 0;
+    assign filter_data_addr = CONV1_FILTER_BASE_ADDR + filter_addr;
+
+    blk_mem_filter filter_data (
+        .clka(filter_clk),
+        .wea(filter_data_we),
+        .addra(filter_data_addr),
+        .dina(filter_data_din),
+        .douta(filter_data_dout)
+    );
+
+    // load filter data from BRAM
+    always @(posedge filter_clk) begin
+        if (reset) begin
+            filter_first_load_done <= 0;
+            filter_data_we <= 0;
+            filter_data_din <= 0;
+            filter_addr <= 0;
+            filter_cycle_count <= 0;
+        end else begin
+            filter_cycle_count <= filter_cycle_count + 1;
+
+            if (filter_addr < (KERNEL_TYPE ? 5 : 3) - 1) begin
+                filter_addr <= filter_addr + 1;
+            end
+
+            if (filter_cycle_count == 2) begin
+                filter_first_load_done <= 1;
+            end
+
+            if (filter_cycle_count >= 2 && filter_addr < 2 + (KERNEL_TYPE ? 5 : 3)) begin
+                for (integer i = 0; i < HEIGHT; i = i + 1) begin
+                    if (i % (KERNEL_TYPE ? 5 : 3) == filter_cycle_count - 2) begin
+                        for (integer j = 0; j < WIDTH; j = j + 2) begin
+                            automatic integer index = i / (KERNEL_TYPE ? 5 : 3) * (WIDTH / PE_TILE_WIDTH)
+                                                    + j / PE_TILE_WIDTH;
+                            for (integer k = 0; k < 5; k = k + 1) begin
+                                filter_buffer[i][j/2][k] <= filter_data_dout[(index * (KERNEL_TYPE ? 5 : 3) + k) * 8 +: 8];
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
     function [7:0] img_after_padding;
         input integer r;
         input integer c;
@@ -126,7 +182,7 @@ module controller (
     endfunction
 
     always @(posedge clk) begin
-        if (reset) begin
+        if (reset || !filter_first_load_done) begin
             cycle_count <= 0;
             load_count <= 0;
             store_count <= 0;
@@ -136,7 +192,7 @@ module controller (
         end else begin
             cycle_count <= cycle_count + 1;
 
-            // load ifm and filter data to PEs at the right time
+            // load ifm data to PEs at the right time
             if ((cycle_count + 1) % (KERNEL_TYPE ? 5 : 3) == 0) begin
                 load_count <= load_count + 1;
 
@@ -161,12 +217,8 @@ module controller (
                 // set pe filter data according to filter buffer
                 if (load_count < (KERNEL_TYPE ? 5 : 3)) begin
                     for (integer i = 0; i < HEIGHT; i = i + 1) begin
-                        for (integer j = 0; j < WIDTH; j = j + 2) begin
-                            automatic integer index = i / (KERNEL_TYPE ? 5 : 3) * (WIDTH / PE_TILE_WIDTH)
-                                                    + j / PE_TILE_WIDTH;
-                            if (i % (KERNEL_TYPE ? 5 : 3) == load_count % (KERNEL_TYPE ? 5 : 3)) begin
-                                pe_filter_data[i][j/2] <= filter_buffer[index];
-                            end
+                        if (i % (KERNEL_TYPE ? 5 : 3) == load_count % (KERNEL_TYPE ? 5 : 3)) begin
+                            pe_filter_data[i] <= filter_buffer[i];
                         end
                     end
                 end

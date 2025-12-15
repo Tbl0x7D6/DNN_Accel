@@ -24,26 +24,51 @@ module controller_tb;
 
     reg clk;
     reg reset;
-    reg [7:0] filter_buffer [127:0][4:0];
+    wire locked;
+    wire clk_1;
+    wire clk_2;
     reg [7:0] input_image [31:0][31:0];
     wire [7:0] output_buffer [7:0][31:0][31:0];
 
-    controller uut (
-        .clk(clk),
+    // 应该根据 locked 生成计算单元的 reset 信号
+    clk_wiz_0 mmcm_inst (
+        .clk_out1(clk_1),
+        .clk_out2(clk_2),
         .reset(reset),
-        .filter_buffer(filter_buffer),
+        .locked(locked),
+        .clk_in1(clk)
+    );
+
+    controller uut (
+        .clk(clk_2),
+        .filter_clk(clk_1),
+        .reset(reset),
         .input_image(input_image),
         .output_buffer(output_buffer)
     );
 
     initial begin
-        integer i, j, image_file;
+        integer i, j, image_file, filter_file, r, c, idx;
 
         image_file = $fopen("image.txt", "r");
         for (i = 0; i < 32; i = i + 1) begin
             for (j = 0; j < 32; j = j + 1) begin
                 $fscanf(image_file, "%d", input_image[i][j]);
             end
+        end
+
+        filter_file = $fopen("filter.txt", "r");
+        for (r = 0; r < 5; r = r + 1) begin
+            reg [3071:0] temp;
+            temp = 0;
+            for (idx = 0; idx < 8; idx = idx + 1) begin
+                for (c = 0; c < 5; c = c + 1) begin
+                    reg [7:0] t;
+                    $fscanf(filter_file, "%d", t);
+                    temp[(idx * 5 + c) * 8 +: 8] = t;
+                end
+            end
+            uut.filter_data.inst.native_mem_module.blk_mem_gen_v8_4_1_inst.memory[r] = temp;
         end
     end
 
@@ -53,26 +78,13 @@ module controller_tb;
     end
 
     initial begin
-        integer r, idx, c, filter_file;
-
         reset = 1;
         #15;
         reset = 0;
-
-        filter_file = $fopen("filter.txt", "r");
-        @(posedge clk);
-        for (r = 0; r < 5; r = r + 1) begin
-            for (idx = 0; idx < 8; idx = idx + 1) begin
-                for (c = 0; c < 5; c = c + 1) begin
-                    $fscanf(filter_file, "%d", filter_buffer[idx][c]);
-                end
-            end
-            repeat(5) @(posedge clk);
-        end
     end
 
     initial begin
-        #3000;
+        #600;
         $finish;
     end
 
