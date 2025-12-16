@@ -40,7 +40,7 @@ with open("filter.txt", "w") as f:
     for oc_batch in range(4):
         for r in range(5):
             for oc in range(8):
-                f.write(" ".join(str(filter[oc_batch * 4 + oc][r][c]) for c in range(5)) + "\n")
+                f.write(" ".join(str(filter[oc_batch * 8 + oc][r][c]) for c in range(5)) + "\n")
 
 def conv(i, j, oc):
     sum = 0
@@ -58,6 +58,27 @@ with open("expected_output.txt", "w") as f:
         for i in range(32):
             for j in range(32):
                 f.write(str(quantize_relu(conv(i, j, oc))) + "\n")
+
+print("------------------------------------------------------")
+print(f"Input feature map")
+print("------------------------------------------------------")
+print()
+for i in range(32):
+    for j in range(32):
+        print(image[i][j], end='\t')
+    print()
+print()
+
+for i in range(32):
+    print("------------------------------------------------------")
+    print(f"Filter for output channel {i}:")
+    print("------------------------------------------------------")
+    print()
+    for fi in range(5):
+        for fj in range(5):
+            print(filter[i][fi][fj], end='\t')
+        print()
+    print()
 
 for oc in range(32):
     print("------------------------------------------------------")

@@ -44,7 +44,7 @@ module controller_tb;
     );
 
     initial begin
-        integer i, j, image_file, filter_file, r, c, idx;
+        integer i, j, image_file, filter_file, round, r, c, idx;
 
         image_file = $fopen("image.txt", "r");
         for (i = 0; i < 32; i = i + 1) begin
@@ -54,17 +54,19 @@ module controller_tb;
         end
 
         filter_file = $fopen("filter.txt", "r");
-        for (r = 0; r < 5; r = r + 1) begin
-            reg [3071:0] temp;
-            temp = 0;
-            for (idx = 0; idx < 8; idx = idx + 1) begin
-                for (c = 0; c < 5; c = c + 1) begin
-                    reg signed [7:0] t;
-                    $fscanf(filter_file, "%d", t);
-                    temp[(idx * 5 + c) * 8 +: 8] = t;
+        for (round = 0; round < 4; round = round + 1) begin
+            for (r = 0; r < 5; r = r + 1) begin
+                reg [3071:0] temp;
+                temp = 0;
+                for (idx = 0; idx < 8; idx = idx + 1) begin
+                    for (c = 0; c < 5; c = c + 1) begin
+                        reg signed [7:0] t;
+                        $fscanf(filter_file, "%d", t);
+                        temp[(idx * 5 + c) * 8 +: 8] = t;
+                    end
                 end
+                uut.filter_data.inst.native_mem_module.blk_mem_gen_v8_4_1_inst.memory[round * 5 + r] = temp;
             end
-            uut.filter_data.inst.native_mem_module.blk_mem_gen_v8_4_1_inst.memory[r] = temp;
         end
     end
 
@@ -80,23 +82,26 @@ module controller_tb;
     end
 
     initial begin
-        integer index, r, c, result_file;
+        integer index, round, r, c, result_file;
         #600;
 
-        $display("Checking results...");
         result_file = $fopen("expected_output.txt", "r");
-        for (index = 0; index < 8; index = index + 1) begin
-            for (r = 0; r < 32; r = r + 1) begin
-                for (c = 0; c < 32; c = c + 1) begin
-                    reg signed [7:0] tmp;
-                    $fscanf(result_file, "%d", tmp);
-                    if (uut.pe_output_data[index * 1024 + r * 32 + c] != tmp) begin
-                        $display("Mismatch at index %0d, row %0d, col %0d: expected %0d, got %0d", index, r, c, tmp, uut.pe_output_data[index * 1024 + r * 32 + c]);
+        for (round = 0; round < 4; round = round + 1) begin
+            $display("Checking results of round %0d...", round);
+            for (index = 0; index < 8; index = index + 1) begin
+                for (r = 0; r < 32; r = r + 1) begin
+                    for (c = 0; c < 32; c = c + 1) begin
+                        reg signed [7:0] tmp;
+                        $fscanf(result_file, "%d", tmp);
+                        if (uut.output_buffer[index * 1024 + r * 32 + c] != tmp) begin
+                            $display("Mismatch at index %0d, row %0d, col %0d: expected %0d, got %0d", index, r, c, tmp, uut.output_buffer[index * 1024 + r * 32 + c]);
+                        end
                     end
                 end
             end
+            $display("Check complete.");
+            #180;
         end
-        $display("Check complete.");
 
         $finish;
     end

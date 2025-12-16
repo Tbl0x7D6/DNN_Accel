@@ -114,6 +114,11 @@ module controller (
     // indicate whether the pe array can start computing
     reg filter_first_load_done;
 
+    // tracked by bram
+    reg [15:0] last_load_round;
+    // set by pe array controller main logic
+    reg [15:0] current_load_round;
+
     reg [9:0] filter_addr;
     reg [15:0] filter_cycle_count;
 
@@ -136,18 +141,26 @@ module controller (
             filter_data_din <= 0;
             filter_addr <= 0;
             filter_cycle_count <= 0;
+            last_load_round <= -1;
         end else begin
-            filter_cycle_count <= filter_cycle_count + 1;
+            if (last_load_round != current_load_round) begin
+                filter_addr <= current_load_round * (KERNEL_TYPE ? 5 : 3);
+                filter_cycle_count <= 0;
+                last_load_round <= current_load_round;
+            end else begin
+                filter_cycle_count <= filter_cycle_count + 1;
 
-            if (filter_addr < (KERNEL_TYPE ? 5 : 3) - 1) begin
-                filter_addr <= filter_addr + 1;
+                if (filter_addr < (last_load_round + 1) * (KERNEL_TYPE ? 5 : 3)) begin
+                    filter_addr <= filter_addr + 1;
+                end
+
+                if (filter_cycle_count == 2) begin
+                    filter_first_load_done <= 1;
+                end
             end
 
-            if (filter_cycle_count == 2) begin
-                filter_first_load_done <= 1;
-            end
-
-            if (filter_cycle_count >= 2 && filter_addr < 2 + (KERNEL_TYPE ? 5 : 3)) begin
+            // bram latency is 2 cycles
+            if (filter_cycle_count >= 2 && filter_cycle_count < 2 + (KERNEL_TYPE ? 5 : 3)) begin
                 for (integer i = 0; i < HEIGHT; i = i + 1) begin
                     if (i % (KERNEL_TYPE ? 5 : 3) == filter_cycle_count - 2) begin
                         for (integer j = 0; j < WIDTH; j = j + 2) begin
@@ -194,10 +207,15 @@ module controller (
     endfunction
 
     reg [15:0] cycle_count;
+    reg [15:0] load_count;
+    reg [15:0] store_count;
 
     always @(posedge clk) begin
         if (reset || !filter_first_load_done) begin
             cycle_count <= 0;
+            load_count <= 0;
+            store_count <= 0;
+            current_load_round <= 0;
             for (integer i = 0; i < MAX_PE_TILE_HEIGHT; i = i + 1) begin
                 start[i] <= 0;
             end
@@ -211,7 +229,11 @@ module controller (
 
             // load ifm data to PEs at the right time
             if (cycle_count % (KERNEL_TYPE ? 5 : 3) == 0) begin
-                automatic integer load_count = (cycle_count / (KERNEL_TYPE ? 5 : 3)) % OFM_SIZE;
+                if (load_count == OFM_SIZE - 1) begin
+                    load_count <= 0;
+                end else begin
+                    load_count <= load_count + 1;
+                end
 
                 // set pe ifm data according to original image
                 for (integer i = 0; i < MAX_PE_TILE_HEIGHT; i = i + 1) begin
@@ -238,14 +260,19 @@ module controller (
                             pe_filter_data[i] <= filter_buffer[i];
                         end
                     end
+                end else if (load_count == (KERNEL_TYPE ? 5 : 3)) begin
+                    // request next filter load
+                    current_load_round <= current_load_round + 1;
                 end
             end
 
             // store output psum to output buffer at the right time
-            if (cycle_count >= time_start_read
-                    && cycle_count < (time_start_read + (KERNEL_TYPE ? 5 : 3) * OFM_SIZE)
-                    && (cycle_count - time_start_read) % (KERNEL_TYPE ? 5 : 3) == 0) begin
-                automatic integer store_count = ((cycle_count - time_start_read) / (KERNEL_TYPE ? 5 : 3)) % OFM_SIZE;
+            if (cycle_count >= time_start_read && (cycle_count - time_start_read) % (KERNEL_TYPE ? 5 : 3) == 0) begin
+                if (store_count == OFM_SIZE - 1) begin
+                    store_count <= 0;
+                end else begin
+                    store_count <= store_count + 1;
+                end
 
                 for (integer i = 0; i < HEIGHT; i = i + 1) begin
                     if ((i + 1) % (KERNEL_TYPE ? 5 : 3) == 0) begin
@@ -263,6 +290,11 @@ module controller (
                         end
                     end
                 end
+            end
+
+            // the assignment below CANNOT be synthesized!!! (65536 bits)
+            if ((cycle_count - time_start_read + 1) % ((KERNEL_TYPE ? 5 : 3) * OFM_SIZE) == 0) begin
+                output_buffer <= pe_output_data;
             end
 
             // generate start signals
