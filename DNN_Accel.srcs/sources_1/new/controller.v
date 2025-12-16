@@ -41,6 +41,7 @@ module controller (
     localparam STRIDE_TYPE = 0;
 
     localparam IFM_SIZE = 32;
+    localparam OFM_SIZE = 32;
 
     // quantization, Q = Q_in + Q_w - Q_out
     // psum_out should be shifted right by Q bits
@@ -55,9 +56,8 @@ module controller (
     // data buffer of bram, can update every KERNEL_SIZE cycles
     reg signed [7:0] filter_buffer [HEIGHT-1:0][WIDTH/2-1:0][4:0];
 
-    // output data buffer
-    // currently only work for conv1 output (8x32x32)
-    reg signed [7:0] output_buffer [7:0][31:0][31:0];
+    // before write back to bram
+    reg signed [7:0] output_buffer [8191:0];
 
     // same ifm data for all PEs
     reg signed [7:0] pe_ifm_data1 [MAX_PE_TILE_HEIGHT-1:0][MAX_PE_TILE_WIDTH-1:0][4:0];
@@ -66,9 +66,8 @@ module controller (
     // same filter data for each 2 PEs
     reg signed [7:0] pe_filter_data [HEIGHT-1:0][WIDTH/2-1:0][4:0];
 
-    reg [15:0] cycle_count;
-    reg [15:0] load_count;
-    reg [15:0] store_count;
+    // cache ofm data from PE tiles
+    reg signed [7:0] pe_output_data [8191:0];
 
     // PE output signals for pipeline connections
     wire signed [20:0] psum_out1 [HEIGHT-1:0][WIDTH-1:0];
@@ -112,7 +111,9 @@ module controller (
     wire [9:0] filter_data_addr;
     wire [3071:0] filter_data_dout;
 
+    // indicate whether the pe array can start computing
     reg filter_first_load_done;
+
     reg [9:0] filter_addr;
     reg [15:0] filter_cycle_count;
 
@@ -192,20 +193,25 @@ module controller (
         end
     endfunction
 
+    reg [15:0] cycle_count;
+
     always @(posedge clk) begin
         if (reset || !filter_first_load_done) begin
             cycle_count <= 0;
-            load_count <= 0;
-            store_count <= 0;
             for (integer i = 0; i < MAX_PE_TILE_HEIGHT; i = i + 1) begin
                 start[i] <= 0;
             end
         end else begin
+            // 1: start signal at cycle 0
+            // 4: DSP latency
+            // kernel_size * kernel_size: MAC pipeline latency
+            automatic integer time_start_read = 1 + 4 + (KERNEL_TYPE ? 25 : 9);
+
             cycle_count <= cycle_count + 1;
 
             // load ifm data to PEs at the right time
-            if ((cycle_count + 1) % (KERNEL_TYPE ? 5 : 3) == 0) begin
-                load_count <= load_count + 1;
+            if (cycle_count % (KERNEL_TYPE ? 5 : 3) == 0) begin
+                automatic integer load_count = (cycle_count / (KERNEL_TYPE ? 5 : 3)) % OFM_SIZE;
 
                 // set pe ifm data according to original image
                 for (integer i = 0; i < MAX_PE_TILE_HEIGHT; i = i + 1) begin
@@ -213,7 +219,7 @@ module controller (
                         if (i == 0 || j == PE_TILE_WIDTH-1) begin
                             automatic integer r1 = i + j;
                             automatic integer r2 = r1 + PE_TILE_WIDTH;
-                            automatic integer c = load_count - i;
+                            automatic integer c = load_count < i ? OFM_SIZE + load_count - i : load_count - i;
                             for (integer k = 0; k < 5; k = k + 1) begin
                                 pe_ifm_data1[i][j][k] <= img_after_padding(r1, c + k);
                                 pe_ifm_data2[i][j][k] <= img_after_padding(r2, c + k);
@@ -236,8 +242,10 @@ module controller (
             end
 
             // store output psum to output buffer at the right time
-            if (cycle_count > ((KERNEL_TYPE ? 5 : 3) - 1 + 29) && (cycle_count - ((KERNEL_TYPE ? 5 : 3) - 1 + 29)) % 5 == 1) begin
-                store_count <= store_count + 1;
+            if (cycle_count >= time_start_read
+                    && cycle_count < (time_start_read + (KERNEL_TYPE ? 5 : 3) * OFM_SIZE)
+                    && (cycle_count - time_start_read) % (KERNEL_TYPE ? 5 : 3) == 0) begin
+                automatic integer store_count = ((cycle_count - time_start_read) / (KERNEL_TYPE ? 5 : 3)) % OFM_SIZE;
 
                 for (integer i = 0; i < HEIGHT; i = i + 1) begin
                     if ((i + 1) % (KERNEL_TYPE ? 5 : 3) == 0) begin
@@ -247,8 +255,11 @@ module controller (
                             automatic integer img_index = img_r * (WIDTH / PE_TILE_WIDTH) + img_c;
                             automatic integer r = j % PE_TILE_WIDTH;
 
-                            output_buffer[img_index][r][store_count] <= quantize_relu(psum_out1[i][j]);
-                            output_buffer[img_index][r + PE_TILE_WIDTH][store_count] <= quantize_relu(psum_out2[i][j]);
+                            automatic integer index1 = img_index * OFM_SIZE * OFM_SIZE + r * OFM_SIZE + store_count;
+                            automatic integer index2 = img_index * OFM_SIZE * OFM_SIZE + (r + PE_TILE_WIDTH) * OFM_SIZE + store_count;
+
+                            pe_output_data[index1] <= quantize_relu(psum_out1[i][j]);
+                            pe_output_data[index2] <= quantize_relu(psum_out2[i][j]);
                         end
                     end
                 end
@@ -256,7 +267,7 @@ module controller (
 
             // generate start signals
             for (integer i = 0; i < MAX_PE_TILE_HEIGHT; i = i + 1) begin
-                if (cycle_count == (i + 1) * (KERNEL_TYPE ? 5 : 3) - 1) begin
+                if (cycle_count == i * (KERNEL_TYPE ? 5 : 3)) begin
                     start[i] <= 1;
                 end else begin
                     start[i] <= 0;

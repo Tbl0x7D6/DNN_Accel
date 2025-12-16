@@ -27,9 +27,6 @@ module controller_tb;
     wire locked;
     wire clk_1;
     wire clk_2;
-    wire signed [7:0] output_buffer [7:0][31:0][31:0];
-
-    assign output_buffer = uut.output_buffer;
 
     // 应该根据 locked 生成计算单元的 reset 信号
     clk_wiz_0 mmcm_inst (
@@ -83,7 +80,24 @@ module controller_tb;
     end
 
     initial begin
+        integer index, r, c, result_file;
         #600;
+
+        $display("Checking results...");
+        result_file = $fopen("expected_output.txt", "r");
+        for (index = 0; index < 8; index = index + 1) begin
+            for (r = 0; r < 32; r = r + 1) begin
+                for (c = 0; c < 32; c = c + 1) begin
+                    reg signed [7:0] tmp;
+                    $fscanf(result_file, "%d", tmp);
+                    if (uut.pe_output_data[index * 1024 + r * 32 + c] != tmp) begin
+                        $display("Mismatch at index %0d, row %0d, col %0d: expected %0d, got %0d", index, r, c, tmp, uut.pe_output_data[index * 1024 + r * 32 + c]);
+                    end
+                end
+            end
+        end
+        $display("Check complete.");
+
         $finish;
     end
 

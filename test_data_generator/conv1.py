@@ -28,7 +28,7 @@ import random
 random.seed(114514)
 
 image = [[random.randint(-50, 50) for _ in range(32)] for _ in range(32)]
-filter = [[[random.randint(-50, 50) for _ in range(5)] for _ in range(5)] for _ in range(8)]
+filter = [[[random.randint(-50, 50) for _ in range(5)] for _ in range(5)] for _ in range(32)]
 
 with open("image.txt", "w") as f:
     for row in image:
@@ -37,9 +37,10 @@ with open("image.txt", "w") as f:
 # Note that the indices of the filter have been reorganized here
 # outer: row of filters    inner: index of filters
 with open("filter.txt", "w") as f:
-    for r in range(5):
-        for oc in range(8):
-            f.write(" ".join(str(filter[oc][r][c]) for c in range(5)) + "\n")
+    for oc_batch in range(4):
+        for r in range(5):
+            for oc in range(8):
+                f.write(" ".join(str(filter[oc_batch * 4 + oc][r][c]) for c in range(5)) + "\n")
 
 def conv(i, j, oc):
     sum = 0
@@ -52,10 +53,19 @@ def conv(i, j, oc):
 def quantize_relu(x):
     return min(max(0, x) >> 9, 127)
 
-for oc in range(8):
+with open("expected_output.txt", "w") as f:
+    for oc in range(32):
+        for i in range(32):
+            for j in range(32):
+                f.write(str(quantize_relu(conv(i, j, oc))) + "\n")
+
+for oc in range(32):
+    print("------------------------------------------------------")
+    print(f"Output feature map for output channel {oc}:")
+    print("------------------------------------------------------")
+    print()
     for i in range(32):
-        row = []
         for j in range(32):
-            row.append(quantize_relu(conv(i, j, oc)))
-        print(row)
+            print(quantize_relu(conv(i, j, oc)), end='\t')
+        print()
     print()
