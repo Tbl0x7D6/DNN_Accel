@@ -67,7 +67,7 @@ module controller_tb;
                         temp[(idx * 5 + c) * 8 +: 8] = t;
                     end
                 end
-                uut.filter_data.inst.native_mem_module.blk_mem_gen_v8_4_1_inst.memory[round * 5 + r] = temp;
+                uut.filter_data.xpm_memory_base_inst.mem[round * 5 + r] = temp;
             end
         end
     end
@@ -103,10 +103,10 @@ module controller_tb;
                         pos = ((index % 2) * 16 + r) * 8;
 
                         case(bram_idx)
-                            0: result = uut.gen_fm_bram[0].fm_bram_inst.inst.native_mem_module.blk_mem_gen_v8_4_1_inst.memory[addr][pos +: 8];
-                            1: result = uut.gen_fm_bram[1].fm_bram_inst.inst.native_mem_module.blk_mem_gen_v8_4_1_inst.memory[addr][pos +: 8];
-                            2: result = uut.gen_fm_bram[2].fm_bram_inst.inst.native_mem_module.blk_mem_gen_v8_4_1_inst.memory[addr][pos +: 8];
-                            3: result = uut.gen_fm_bram[3].fm_bram_inst.inst.native_mem_module.blk_mem_gen_v8_4_1_inst.memory[addr][pos +: 8];
+                            0: result = uut.gen_fm_bram[0].fm_bram_inst.xpm_memory_base_inst.mem[addr][pos +: 8];
+                            1: result = uut.gen_fm_bram[1].fm_bram_inst.xpm_memory_base_inst.mem[addr][pos +: 8];
+                            2: result = uut.gen_fm_bram[2].fm_bram_inst.xpm_memory_base_inst.mem[addr][pos +: 8];
+                            3: result = uut.gen_fm_bram[3].fm_bram_inst.xpm_memory_base_inst.mem[addr][pos +: 8];
                         endcase
 
                         if (result !== golden) begin

@@ -136,12 +136,48 @@ module controller (
     localparam CONV1_FILTER_BASE_ADDR = 0;
     assign filter_data_addr = CONV1_FILTER_BASE_ADDR + filter_addr;
 
-    blk_mem_filter filter_data (
-        .clka(filter_clk),
-        .wea(filter_data_we),
-        .addra(filter_data_addr),
-        .dina(filter_data_din),
-        .douta(filter_data_dout)
+    xpm_memory_spram # (
+
+        // Common module parameters
+        .MEMORY_SIZE             (3072*1024),            //positive integer
+        .MEMORY_PRIMITIVE        ("auto"),          //string; "auto", "distributed", "block" or "ultra";
+        .MEMORY_INIT_FILE        ("none"),          //string; "none" or "<filename>.mem" 
+        .MEMORY_INIT_PARAM       (""    ),          //string;
+        .USE_MEM_INIT            (0),               //integer; 0,1
+        .WAKEUP_TIME             ("disable_sleep"), //string; "disable_sleep" or "use_sleep_pin" 
+        .MESSAGE_CONTROL         (0),               //integer; 0,1
+        .MEMORY_OPTIMIZATION     ("true"),          //string; "true", "false" 
+
+        // Port A module parameters
+        .WRITE_DATA_WIDTH_A      (3072),              //positive integer
+        .READ_DATA_WIDTH_A       (3072),              //positive integer
+        .BYTE_WRITE_WIDTH_A      (3072),              //integer; 8, 9, or WRITE_DATA_WIDTH_A value
+        .ADDR_WIDTH_A            (10),               //positive integer
+        .READ_RESET_VALUE_A      ("0"),             //string
+        .ECC_MODE                ("no_ecc"),        //string; "no_ecc", "encode_only", "decode_only" or "both_encode_and_decode" 
+        .AUTO_SLEEP_TIME         (0),               //Do not Change
+        .READ_LATENCY_A          (2),               //non-negative integer
+        .WRITE_MODE_A            ("write_first")     //string; "write_first", "read_first", "no_change" 
+
+    ) filter_data (
+
+        // Common module ports
+        .sleep                   (1'b0),
+
+        // Port A module ports
+        .clka                    (filter_clk),
+        .rsta                    (),
+        .ena                     (1),
+        .regcea                  (1),
+        .wea                     (filter_data_we),
+        .addra                   (filter_data_addr),
+        .dina                    (filter_data_din),
+        .injectsbiterra          (1'b0),
+        .injectdbiterra          (1'b0),
+        .douta                   (filter_data_dout),
+        .sbiterra                (),
+        .dbiterra                ()
+
     );
 
     // load filter data from BRAM
@@ -206,17 +242,73 @@ module controller (
 
     generate
         for (i = 0; i < 8; i = i + 1) begin : gen_fm_bram
-            blk_mem_fm fm_bram_inst (
-                .clka(fm_read_clk),
-                .wea(0),
-                .addra(fm_data_read_addr[i]),
-                .dina(512'b0),
-                .douta(fm_data_dout[i]),
-                .clkb(fm_write_clk),
-                .web(fm_data_we),
-                .addrb(fm_data_write_addr),
-                .dinb(fm_data_din[i]),
-                .doutb()
+            xpm_memory_tdpram # (
+
+                // Common module parameters
+                .MEMORY_SIZE             (512*256),            //positive integer
+                .MEMORY_PRIMITIVE        ("auto"),          //string; "auto", "distributed", "block" or "ultra";
+                .CLOCKING_MODE           ("independent_clock"),  //string; "common_clock", "independent_clock" 
+                .MEMORY_INIT_FILE        ("none"),          //string; "none" or "<filename>.mem" 
+                .MEMORY_INIT_PARAM       (""    ),          //string;
+                .USE_MEM_INIT            (0),               //integer; 0,1
+                .WAKEUP_TIME             ("disable_sleep"), //string; "disable_sleep" or "use_sleep_pin" 
+                .MESSAGE_CONTROL         (0),               //integer; 0,1
+                .ECC_MODE                ("no_ecc"),        //string; "no_ecc", "encode_only", "decode_only" or "both_encode_and_decode" 
+                .AUTO_SLEEP_TIME         (0),               //Do not Change
+                .USE_EMBEDDED_CONSTRAINT (0),               //integer: 0,1
+                .MEMORY_OPTIMIZATION     ("true"),          //string; "true", "false" 
+
+                // Port A module parameters
+                .WRITE_DATA_WIDTH_A      (512),              //positive integer
+                .READ_DATA_WIDTH_A       (512),              //positive integer
+                .BYTE_WRITE_WIDTH_A      (512),              //integer; 8, 9, or WRITE_DATA_WIDTH_A value
+                .ADDR_WIDTH_A            (8),               //positive integer
+                .READ_RESET_VALUE_A      ("0"),             //string
+                .READ_LATENCY_A          (2),               //non-negative integer
+                .WRITE_MODE_A            ("write_first"),     //string; "write_first", "read_first", "no_change" 
+
+                // Port B module parameters
+                .WRITE_DATA_WIDTH_B      (512),              //positive integer
+                .READ_DATA_WIDTH_B       (512),              //positive integer
+                .BYTE_WRITE_WIDTH_B      (512),              //integer; 8, 9, or WRITE_DATA_WIDTH_B value
+                .ADDR_WIDTH_B            (8),               //positive integer
+                .READ_RESET_VALUE_B      ("0"),             //vector of READ_DATA_WIDTH_B bits
+                .READ_LATENCY_B          (2),               //non-negative integer
+                .WRITE_MODE_B            ("write_first")      //string; "write_first", "read_first", "no_change" 
+
+            ) fm_bram_inst (
+
+                // Common module ports
+                .sleep                   (1'b0),
+
+                // Port A module ports
+                .clka                    (fm_read_clk),
+                .rsta                    (),
+                .ena                     (1),
+                .regcea                  (),
+                .wea                     (0),
+                .addra                   (fm_data_read_addr[i]),
+                .dina                    (512'b0),
+                .injectsbiterra          (1'b0),
+                .injectdbiterra          (1'b0),
+                .douta                   (fm_data_dout[i]),
+                .sbiterra                (),
+                .dbiterra                (),
+
+                // Port B module ports
+                .clkb                    (fm_write_clk),
+                .rstb                    (),
+                .enb                     (1),
+                .regceb                  (),
+                .web                     (fm_data_we),
+                .addrb                   (fm_data_write_addr),
+                .dinb                    (fm_data_din[i]),
+                .injectsbiterrb          (1'b0),
+                .injectdbiterrb          (1'b0),
+                .doutb                   (),
+                .sbiterrb                (),
+                .dbiterrb                ()
+
             );
         end
     endgenerate
