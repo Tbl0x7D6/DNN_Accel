@@ -53,11 +53,32 @@ def conv(i, j, oc):
 def quantize_relu(x):
     return min(max(0, x) >> 9, 127)
 
+ofm = []
+for oc in range(32):
+    row = []
+    for i in range(32):
+        col = []
+        for j in range(32):
+            col.append(quantize_relu(conv(i, j, oc)))
+        row.append(col)
+    ofm.append(row)
+
+ofm_pooled = []
+for oc in range(32):
+    row = []
+    for i in range(16):
+        col = []
+        for j in range(16):
+            val = max(ofm[oc][i*2][j*2], ofm[oc][i*2][j*2+1], ofm[oc][i*2+1][j*2], ofm[oc][i*2+1][j*2+1])
+            col.append(val)
+        row.append(col)
+    ofm_pooled.append(row)
+
 with open("expected_output.txt", "w") as f:
     for oc in range(32):
-        for i in range(32):
-            for j in range(32):
-                f.write(str(quantize_relu(conv(i, j, oc))) + "\n")
+        for i in range(16):
+            for j in range(16):
+                f.write(str(ofm_pooled[oc][i][j]) + "\n")
 
 print("------------------------------------------------------")
 print(f"Input feature map")
@@ -85,8 +106,8 @@ for oc in range(32):
     print(f"Output feature map for output channel {oc}:")
     print("------------------------------------------------------")
     print()
-    for i in range(32):
-        for j in range(32):
-            print(quantize_relu(conv(i, j, oc)), end='\t')
+    for i in range(16):
+        for j in range(16):
+            print(ofm_pooled[oc][i][j], end='\t')
         print()
     print()

@@ -209,12 +209,14 @@ module controller (
     reg [15:0] cycle_count;
     reg [15:0] load_count;
     reg [15:0] store_count;
+    reg [15:0] pooling_count;
 
     always @(posedge clk) begin
         if (reset || !filter_first_load_done) begin
             cycle_count <= 0;
             load_count <= 0;
             store_count <= 0;
+            pooling_count <= 0;
             current_load_round <= 0;
             for (integer i = 0; i < MAX_PE_TILE_HEIGHT; i = i + 1) begin
                 start[i] <= 0;
@@ -224,6 +226,9 @@ module controller (
             // 4: DSP latency
             // kernel_size * kernel_size: MAC pipeline latency
             automatic integer time_start_read = 1 + 4 + (KERNEL_TYPE ? 25 : 9);
+
+            // for conv1, we can start pooling after first 2 columns of ofm are ready
+            automatic integer time_start_pooling = time_start_read + (KERNEL_TYPE ? 5 : 3) + 1;
 
             cycle_count <= cycle_count + 1;
 
@@ -293,8 +298,39 @@ module controller (
             end
 
             // the assignment below CANNOT be synthesized!!! (65536 bits)
-            if ((cycle_count - time_start_read + 1) % ((KERNEL_TYPE ? 5 : 3) * OFM_SIZE) == 0) begin
-                output_buffer <= pe_output_data;
+            // if ((cycle_count - time_start_read + 1) % ((KERNEL_TYPE ? 5 : 3) * OFM_SIZE) == 0) begin
+            //     output_buffer <= pe_output_data;
+            // end
+
+            // pooling every 2 output columns are ready
+            if (cycle_count >= time_start_pooling && (cycle_count - time_start_pooling) % ((KERNEL_TYPE ? 5 : 3) * 2) == 0) begin
+                if (pooling_count == (OFM_SIZE / 2) - 1) begin
+                    pooling_count <= 0;
+                end else begin
+                    pooling_count <= pooling_count + 1;
+                end
+
+                // perform 2x2 max pooling
+                for (integer img_index = 0; img_index < (HEIGHT / (KERNEL_TYPE ? 5 : 3)) * (WIDTH / PE_TILE_WIDTH); img_index = img_index + 1) begin
+                    for (integer r = 0; r < OFM_SIZE / 2; r = r + 1) begin
+                        automatic integer buffer_index = img_index * OFM_SIZE * OFM_SIZE / 4 + r * OFM_SIZE / 2 + pooling_count;
+                        automatic integer pe_r = r * 2;
+                        automatic integer pe_c = pooling_count * 2;
+                        automatic integer index1 = img_index * OFM_SIZE * OFM_SIZE + pe_r * OFM_SIZE + pe_c;
+                        automatic integer index2 = img_index * OFM_SIZE * OFM_SIZE + pe_r * OFM_SIZE + (pe_c + 1);
+                        automatic integer index3 = img_index * OFM_SIZE * OFM_SIZE + (pe_r + 1) * OFM_SIZE + pe_c;
+                        automatic integer index4 = img_index * OFM_SIZE * OFM_SIZE + (pe_r + 1) * OFM_SIZE + (pe_c + 1);
+
+                        automatic reg [7:0] val1 = pe_output_data[index1];
+                        automatic reg [7:0] val2 = pe_output_data[index2];
+                        automatic reg [7:0] val3 = pe_output_data[index3];
+                        automatic reg [7:0] val4 = pe_output_data[index4];
+
+                        automatic reg [7:0] max1 = (val1 > val2) ? val1 : val2;
+                        automatic reg [7:0] max2 = (val3 > val4) ? val3 : val4;
+                        output_buffer[buffer_index] <= (max1 > max2) ? max1 : max2;
+                    end
+                end
             end
 
             // generate start signals

@@ -83,18 +83,18 @@ module controller_tb;
 
     initial begin
         integer index, round, r, c, result_file;
-        #600;
+        #555;
 
         result_file = $fopen("expected_output.txt", "r");
         for (round = 0; round < 4; round = round + 1) begin
             $display("Checking results of round %0d...", round);
             for (index = 0; index < 8; index = index + 1) begin
-                for (r = 0; r < 32; r = r + 1) begin
-                    for (c = 0; c < 32; c = c + 1) begin
+                for (r = 0; r < 16; r = r + 1) begin
+                    for (c = 0; c < 16; c = c + 1) begin
                         reg signed [7:0] tmp;
                         $fscanf(result_file, "%d", tmp);
-                        if (uut.output_buffer[index * 1024 + r * 32 + c] != tmp) begin
-                            $display("Mismatch at index %0d, row %0d, col %0d: expected %0d, got %0d", index, r, c, tmp, uut.output_buffer[index * 1024 + r * 32 + c]);
+                        if (uut.output_buffer[index * 256 + r * 16 + c] != tmp) begin
+                            $display("Mismatch at index %0d, row %0d, col %0d: expected %0d, got %0d", index, r, c, tmp, uut.output_buffer[index * 256 + r * 16 + c]);
                         end
                     end
                 end
