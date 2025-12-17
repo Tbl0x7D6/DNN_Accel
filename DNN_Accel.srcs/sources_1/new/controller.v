@@ -23,6 +23,8 @@
 module controller (
     input wire clk,
     input wire filter_clk,
+    input wire fm_read_clk,
+    input wire fm_write_clk,
     input wire reset
 );
 
@@ -42,6 +44,7 @@ module controller (
 
     localparam IFM_SIZE = 32;
     localparam OFM_SIZE = 32;
+    localparam OFM_SIZE_POOL = OFM_SIZE / 2;
 
     // quantization, Q = Q_in + Q_w - Q_out
     // psum_out should be shifted right by Q bits
@@ -104,6 +107,14 @@ module controller (
             end
         end
     endgenerate
+
+    // controller state
+    reg [15:0] cycle_count;
+    // (refer to data delivery pattern) sliding window (from left to right) position
+    reg [15:0] load_count;
+    // pick which column to store to buffer
+    reg [15:0] store_count;
+    reg [15:0] pooling_count;
 
     // filter BRAM
     reg filter_data_we;
@@ -176,6 +187,70 @@ module controller (
         end
     end
 
+    // feature map BRAM
+    reg fm_data_we;
+    reg [511:0] fm_data_din [7:0];
+    wire [7:0] fm_data_read_addr [7:0];
+    wire [7:0] fm_data_write_addr;
+    wire [511:0] fm_data_dout [7:0];
+
+    // tracked by bram
+    reg [15:0] last_write_back_count;
+    // set by pe array controller main logic
+    reg [15:0] current_write_back_count;
+
+    reg [7:0] fm_write_addr;
+
+    localparam CONV1_OFM_BASE_ADDR = 0;
+    assign fm_data_write_addr = CONV1_OFM_BASE_ADDR + fm_write_addr;
+
+    generate
+        for (i = 0; i < 8; i = i + 1) begin : gen_fm_bram
+            blk_mem_fm fm_bram_inst (
+                .clka(fm_read_clk),
+                .wea(0),
+                .addra(fm_data_read_addr[i]),
+                .dina(512'b0),
+                .douta(fm_data_dout[i]),
+                .clkb(fm_write_clk),
+                .web(fm_data_we),
+                .addrb(fm_data_write_addr),
+                .dinb(fm_data_din[i]),
+                .doutb()
+            );
+        end
+    endgenerate
+
+    always @(posedge fm_write_clk) begin
+        if (reset || current_write_back_count == 0) begin
+            fm_data_we <= 0;
+            last_write_back_count <= 0;
+            fm_write_addr <= 0;
+        end else begin
+            if (last_write_back_count < current_write_back_count) begin
+                fm_data_we <= 1;
+                last_write_back_count <= last_write_back_count + 1;
+                fm_write_addr <= last_write_back_count;
+
+                for (integer block = 0; block < 8; block = block + 1) begin
+                    fm_data_din[block] <= 0;
+                    if (block * (KERNEL_TYPE ? 5 : 3) <= HEIGHT) begin
+                        automatic integer c = last_write_back_count % OFM_SIZE_POOL;
+                        for (integer img_col = 0; img_col < (WIDTH / PE_TILE_WIDTH); img_col = img_col + 1) begin
+                            automatic integer img_index = block * (WIDTH / PE_TILE_WIDTH) + img_col;
+                            for (integer r = 0; r < OFM_SIZE_POOL; r = r + 1) begin
+                                automatic integer buffer_index = img_index * OFM_SIZE_POOL * OFM_SIZE_POOL + r * OFM_SIZE_POOL + c;
+                                fm_data_din[block][(img_col * OFM_SIZE_POOL + r) * 8 +: 8] <= output_buffer[buffer_index];
+                            end
+                        end
+                    end
+                end
+            end else begin
+                fm_data_we <= 0;
+            end
+        end
+    end
+
     function [7:0] img_after_padding;
         input integer r;
         input integer c;
@@ -206,11 +281,6 @@ module controller (
         end
     endfunction
 
-    reg [15:0] cycle_count;
-    reg [15:0] load_count;
-    reg [15:0] store_count;
-    reg [15:0] pooling_count;
-
     always @(posedge clk) begin
         if (reset || !filter_first_load_done) begin
             cycle_count <= 0;
@@ -218,6 +288,7 @@ module controller (
             store_count <= 0;
             pooling_count <= 0;
             current_load_round <= 0;
+            current_write_back_count <= 0;
             for (integer i = 0; i < MAX_PE_TILE_HEIGHT; i = i + 1) begin
                 start[i] <= 0;
             end
@@ -297,23 +368,22 @@ module controller (
                 end
             end
 
-            // the assignment below CANNOT be synthesized!!! (65536 bits)
-            // if ((cycle_count - time_start_read + 1) % ((KERNEL_TYPE ? 5 : 3) * OFM_SIZE) == 0) begin
-            //     output_buffer <= pe_output_data;
-            // end
-
             // pooling every 2 output columns are ready
-            if (cycle_count >= time_start_pooling && (cycle_count - time_start_pooling) % ((KERNEL_TYPE ? 5 : 3) * 2) == 0) begin
-                if (pooling_count == (OFM_SIZE / 2) - 1) begin
+            if (cycle_count >= time_start_pooling
+                    && cycle_count < time_start_pooling + OFM_SIZE * (KERNEL_TYPE ? 5 : 3) * 4       // HARD CODED, NEED TO CHANGE AT CONV 2-4
+                    && (cycle_count - time_start_pooling) % ((KERNEL_TYPE ? 5 : 3) * 2) == 0) begin
+                if (pooling_count == OFM_SIZE_POOL - 1) begin
                     pooling_count <= 0;
                 end else begin
                     pooling_count <= pooling_count + 1;
                 end
 
+                current_write_back_count <= current_write_back_count + 1;
+
                 // perform 2x2 max pooling
                 for (integer img_index = 0; img_index < (HEIGHT / (KERNEL_TYPE ? 5 : 3)) * (WIDTH / PE_TILE_WIDTH); img_index = img_index + 1) begin
-                    for (integer r = 0; r < OFM_SIZE / 2; r = r + 1) begin
-                        automatic integer buffer_index = img_index * OFM_SIZE * OFM_SIZE / 4 + r * OFM_SIZE / 2 + pooling_count;
+                    for (integer r = 0; r < OFM_SIZE_POOL; r = r + 1) begin
+                        automatic integer buffer_index = img_index * OFM_SIZE_POOL * OFM_SIZE_POOL + r * OFM_SIZE_POOL + pooling_count;
                         automatic integer pe_r = r * 2;
                         automatic integer pe_c = pooling_count * 2;
                         automatic integer index1 = img_index * OFM_SIZE * OFM_SIZE + pe_r * OFM_SIZE + pe_c;

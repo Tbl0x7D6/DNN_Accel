@@ -40,6 +40,8 @@ module controller_tb;
     controller uut (
         .clk(clk_2),
         .filter_clk(clk_1),
+        .fm_read_clk(clk_1),
+        .fm_write_clk(clk_1),
         .reset(reset)
     );
 
@@ -82,8 +84,8 @@ module controller_tb;
     end
 
     initial begin
-        integer index, round, r, c, result_file;
-        #555;
+        integer index, round, r, c, result_file, addr;
+        #1250;
 
         result_file = $fopen("expected_output.txt", "r");
         for (round = 0; round < 4; round = round + 1) begin
@@ -91,16 +93,29 @@ module controller_tb;
             for (index = 0; index < 8; index = index + 1) begin
                 for (r = 0; r < 16; r = r + 1) begin
                     for (c = 0; c < 16; c = c + 1) begin
-                        reg signed [7:0] tmp;
-                        $fscanf(result_file, "%d", tmp);
-                        if (uut.output_buffer[index * 256 + r * 16 + c] != tmp) begin
-                            $display("Mismatch at index %0d, row %0d, col %0d: expected %0d, got %0d", index, r, c, tmp, uut.output_buffer[index * 256 + r * 16 + c]);
+                        reg signed [7:0] golden;
+                        reg signed [7:0] result;
+                        integer bram_idx;
+                        integer pos;
+                        $fscanf(result_file, "%d", golden);
+                        addr = round * 16 + c;
+                        bram_idx = index / 2;
+                        pos = ((index % 2) * 16 + r) * 8;
+
+                        case(bram_idx)
+                            0: result = uut.gen_fm_bram[0].fm_bram_inst.inst.native_mem_module.blk_mem_gen_v8_4_1_inst.memory[addr][pos +: 8];
+                            1: result = uut.gen_fm_bram[1].fm_bram_inst.inst.native_mem_module.blk_mem_gen_v8_4_1_inst.memory[addr][pos +: 8];
+                            2: result = uut.gen_fm_bram[2].fm_bram_inst.inst.native_mem_module.blk_mem_gen_v8_4_1_inst.memory[addr][pos +: 8];
+                            3: result = uut.gen_fm_bram[3].fm_bram_inst.inst.native_mem_module.blk_mem_gen_v8_4_1_inst.memory[addr][pos +: 8];
+                        endcase
+
+                        if (result !== golden) begin
+                            $display("Mismatch at round %0d, index %0d, row %0d, col %0d: expected %0d, got %0d", round, index, r, c, golden, result);
                         end
                     end
                 end
             end
             $display("Check complete.");
-            #180;
         end
 
         $finish;
