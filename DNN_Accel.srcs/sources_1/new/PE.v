@@ -57,9 +57,9 @@ module PE (
     assign dsp_out_mac_count_delay = (kernel_type == 0 ? 1 : 4);
 
     // compute two int8 multiplications concurrently
-    wire [7:0] low = start ? ifm_data1[0] : ifm_data1[mac_count];
-    wire [7:0] high = start ? ifm_data2[0] : ifm_data2[mac_count];
-    wire [7:0] filter_byte = start ? filter_data[0] : filter_data[mac_count];
+    wire [7:0] low = ifm_data1[mac_count];
+    wire [7:0] high = ifm_data2[mac_count];
+    wire [7:0] filter_byte = filter_data[mac_count];
 
     assign A[7:0] = low[7] ? ~(low - 1) : low;
     assign A[15:8] = 8'b0;
@@ -78,7 +78,7 @@ module PE (
     always @(posedge clk) begin
         // FSM
         if (start) begin
-            mac_count <= 1;
+            mac_count <= 0;
         end else begin
             mac_count <= mac_count + 1;
             if (mac_count == (kernel_type == 0 ? 2 : 4)) begin
@@ -96,14 +96,11 @@ module PE (
 
         // make sure psum_out is available in several cycles for next PE
         if (mac_count == dsp_out_mac_count_delay) begin
-            psum_temp1 <= (use_prev_psum ? psum_data1 : 21'sd0) + low_result;
-            psum_temp2 <= (use_prev_psum ? psum_data2 : 21'sd0) + high_result;
-        end else if (mac_count + 1 == dsp_out_mac_count_delay) begin
-            psum_out1 <= psum_temp1 + low_result;
-            psum_out2 <= psum_temp2 + high_result;
+            psum_out1 <= (use_prev_psum ? psum_data1 : 21'sd0) + low_result;
+            psum_out2 <= (use_prev_psum ? psum_data2 : 21'sd0) + high_result;
         end else begin
-            psum_temp1 <= psum_temp1 + low_result;
-            psum_temp2 <= psum_temp2 + high_result;
+            psum_out1 <= psum_out1 + low_result;
+            psum_out2 <= psum_out2 + high_result;
         end
     end
 

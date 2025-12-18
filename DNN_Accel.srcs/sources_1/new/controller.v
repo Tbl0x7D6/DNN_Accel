@@ -25,8 +25,13 @@ module controller (
     input wire filter_clk,
     input wire fm_read_clk,
     input wire fm_write_clk,
+    // input wire [1:0] layer_select,
     input wire reset
 );
+
+    // 0-3: conv1-conv4
+    // wire [1:0] layer;
+    // assign layer = layer_select;
 
     // PE array size
     localparam HEIGHT = 24;
@@ -37,18 +42,54 @@ module controller (
     localparam MAX_PE_TILE_WIDTH = 16;
     localparam PE_TILE_HEIGHT = 5;
     localparam PE_TILE_WIDTH = 16;
+    // reg [7:0] PE_TILE_HEIGHT;
+    // reg [7:0] PE_TILE_WIDTH;
 
     // same value for all PEs
     localparam KERNEL_TYPE = 1;
     localparam STRIDE_TYPE = 0;
+    // reg KERNEL_TYPE;
+    // reg STRIDE_TYPE;
 
     localparam IFM_SIZE = 32;
     localparam OFM_SIZE = 32;
-    localparam OFM_SIZE_POOL = OFM_SIZE / 2;
+    // reg [7:0] IFM_SIZE;
+    // reg [7:0] OFM_SIZE;
 
     // quantization, Q = Q_in + Q_w - Q_out
     // psum_out should be shifted right by Q bits
     localparam Q = 9;
+    // reg [7:0] Q;
+
+    // always @(*) begin
+    //     case(layer)
+    //         // 2'b00: begin
+    //         //     PE_TILE_HEIGHT = 5;
+    //         //     PE_TILE_WIDTH = 16;
+    //         //     KERNEL_TYPE = 1;
+    //         //     STRIDE_TYPE = 0;
+    //         //     IFM_SIZE = 32;
+    //         //     OFM_SIZE = 32;
+    //         //     Q = 9;
+    //         // end
+    //         default: begin
+    //             // PE_TILE_HEIGHT = 3;
+    //             // PE_TILE_WIDTH = 8;
+    //             // KERNEL_TYPE = 0;
+    //             // STRIDE_TYPE = 0;
+    //             // IFM_SIZE = 16;
+    //             // OFM_SIZE = 16;
+    //             // Q = 8;
+    //             PE_TILE_HEIGHT = 5;
+    //             PE_TILE_WIDTH = 16;
+    //             KERNEL_TYPE = 1;
+    //             STRIDE_TYPE = 0;
+    //             IFM_SIZE = 32;
+    //             OFM_SIZE = 32;
+    //             Q = 9;
+    //         end
+    //     endcase
+    // end
 
     // start signals for each row of a PE tile
     reg start [MAX_PE_TILE_HEIGHT-1:0];
@@ -89,14 +130,32 @@ module controller (
                     assign psum_in2[i][j] = psum_out2[i-1][j];
                 end
 
+                reg pe_start;
+                reg pe_use_prev_psum;
+                reg signed [7:0] pe_ifm1 [4:0];
+                reg signed [7:0] pe_ifm2 [4:0];
+
+                integer k;
+                always @(*) begin
+                    pe_start = start[i % PE_TILE_HEIGHT];
+                    if (KERNEL_TYPE)
+                        pe_use_prev_psum = (i % 5 != 0);
+                    else
+                        pe_use_prev_psum = (i % 3 != 0);
+                    for (k = 0; k < 5; k = k + 1) begin
+                        pe_ifm1[k] = pe_ifm_data1[i % PE_TILE_HEIGHT][j % PE_TILE_WIDTH][k];
+                        pe_ifm2[k] = pe_ifm_data2[i % PE_TILE_HEIGHT][j % PE_TILE_WIDTH][k];
+                    end
+                end
+
                 PE pe_inst (
                     .clk(clk),
                     .kernel_type(KERNEL_TYPE),
-                    .start(start[i % PE_TILE_HEIGHT]),
-                    .use_prev_psum(i % (KERNEL_TYPE ? 5 : 3) == 0 ? 0 : 1),
+                    .start(pe_start),
+                    .use_prev_psum(pe_use_prev_psum),
                     .filter_data(pe_filter_data[i][j/2]),
-                    .ifm_data1(pe_ifm_data1[i % PE_TILE_HEIGHT][j % PE_TILE_WIDTH]),
-                    .ifm_data2(pe_ifm_data2[i % PE_TILE_HEIGHT][j % PE_TILE_WIDTH]),
+                    .ifm_data1(pe_ifm1),
+                    .ifm_data2(pe_ifm2),
                     .psum_data1(psum_in1[i][j]),
                     .psum_data2(psum_in2[i][j]),
                     .psum_out1(psum_out1[i][j]),
@@ -418,10 +477,10 @@ module controller (
                 start[i] <= 0;
             end
         end else begin
-            // 1: start signal at cycle 0
+            // 2: start signal at cycle 1, the next cycle PE starts computing
             // 4: DSP latency
             // kernel_size * kernel_size: MAC pipeline latency
-            automatic integer time_start_read = 1 + 4 + (KERNEL_TYPE ? 25 : 9);
+            automatic integer time_start_read = 2 + 4 + (KERNEL_TYPE ? 25 : 9);
 
             // for conv1, we can start pooling after first 2 columns of ofm are ready
             automatic integer time_start_pooling = time_start_read + (KERNEL_TYPE ? 5 : 3) + 1;
@@ -429,7 +488,7 @@ module controller (
             cycle_count <= cycle_count + 1;
 
             // load ifm data to PEs at the right time
-            if (cycle_count % (KERNEL_TYPE ? 5 : 3) == 0) begin
+            if (cycle_count % (KERNEL_TYPE ? 5 : 3) == 1) begin
                 if (load_count == OFM_SIZE - 1) begin
                     load_count <= 0;
                 end else begin
@@ -447,7 +506,7 @@ module controller (
                                 pe_ifm_data1[i][j][k] <= img_after_padding(r1, c + k);
                                 pe_ifm_data2[i][j][k] <= img_after_padding(r2, c + k);
                             end
-                        end else if (i < PE_TILE_HEIGHT && j < PE_TILE_WIDTH) begin
+                        end else if (i < PE_TILE_HEIGHT && j < PE_TILE_WIDTH && j < MAX_PE_TILE_WIDTH - 1) begin
                             pe_ifm_data1[i][j] <= pe_ifm_data1[i-1][j+1];
                             pe_ifm_data2[i][j] <= pe_ifm_data2[i-1][j+1];
                         end
@@ -476,39 +535,37 @@ module controller (
                 end
 
                 if (store_count % 2 == 0) begin
-                    for (integer i = 0; i < HEIGHT; i = i + 1) begin
-                        if ((i + 1) % (KERNEL_TYPE ? 5 : 3) == 0) begin
-                            for (integer j = 0; j < WIDTH; j = j + 1) begin
-                                automatic integer img_r = i / (KERNEL_TYPE ? 5 : 3);
-                                automatic integer img_c = j / PE_TILE_WIDTH;
-                                automatic integer img_index = img_r * (WIDTH / PE_TILE_WIDTH) + img_c;
-                                automatic integer r = j % PE_TILE_WIDTH;
+                    for (integer i = 4; i < 24; i = i + 5) begin
+                        for (integer j = 0; j < 32; j = j + 1) begin
+                            automatic integer img_r = i / 5;
+                            automatic integer img_c = j / 16;
+                            automatic integer img_index = img_r * 2 + img_c;
+                            automatic integer r = j % 16;
 
-                                pe_column_cache[img_index][r] <= quantize_relu(psum_out1[i][j]);
-                                pe_column_cache[img_index][r + PE_TILE_WIDTH] <= quantize_relu(psum_out2[i][j]);
-                            end
+                            pe_column_cache[img_index][r] <= quantize_relu(psum_out1[i][j]);
+                            pe_column_cache[img_index][r + 16] <= quantize_relu(psum_out2[i][j]);
                         end
                     end
                 end else begin
                     // perform 2x2 max pooling
-                    for (integer img_index = 0; img_index < (HEIGHT / (KERNEL_TYPE ? 5 : 3)) * (WIDTH / PE_TILE_WIDTH); img_index = img_index + 1) begin
-                        for (integer r = 0; r < OFM_SIZE_POOL; r = r + 1) begin
+                    for (integer img_index = 0; img_index < 8; img_index = img_index + 1) begin
+                        for (integer r = 0; r < 16; r = r + 1) begin
                             automatic integer pe_r = r * 2;
-                            automatic integer i = (img_index / (WIDTH / PE_TILE_WIDTH) + 1) * (KERNEL_TYPE ? 5 : 3) - 1;
-                            automatic integer j = (img_index % (WIDTH / PE_TILE_WIDTH)) * PE_TILE_WIDTH;
+                            automatic integer i = (img_index / 2 + 1) * 5 - 1;
+                            automatic integer j = (img_index % 2) * 16;
 
-                            automatic integer block = img_index / (WIDTH / PE_TILE_WIDTH);
-                            automatic integer byte_position = (img_index % (WIDTH / PE_TILE_WIDTH)) * OFM_SIZE_POOL + r;
+                            automatic integer block = img_index / 2;
+                            automatic integer byte_position = (img_index % 2) * 16 + r;
 
                             automatic reg [7:0] val1 = pe_column_cache[img_index][pe_r];
                             automatic reg [7:0] val2 = pe_column_cache[img_index][pe_r + 1];
-                            automatic reg [7:0] val3 = quantize_relu(pe_r < PE_TILE_WIDTH
+                            automatic reg [7:0] val3 = quantize_relu(pe_r < 16
                                 ? psum_out1[i][j + pe_r]
-                                : psum_out2[i][j + pe_r - PE_TILE_WIDTH]
+                                : psum_out2[i][j + pe_r - 16]
                             );
-                            automatic reg [7:0] val4 = quantize_relu(pe_r + 1 < PE_TILE_WIDTH
+                            automatic reg [7:0] val4 = quantize_relu(pe_r + 1 < 16
                                 ? psum_out1[i][j + pe_r + 1]
-                                : psum_out2[i][j + pe_r + 1 - PE_TILE_WIDTH]
+                                : psum_out2[i][j + pe_r + 1 - 16]
                             );
 
                             automatic reg [7:0] max1 = (val1 > val2) ? val1 : val2;

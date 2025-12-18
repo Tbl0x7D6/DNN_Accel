@@ -24,6 +24,7 @@ module controller_tb;
 
     reg clk;
     reg reset;
+    reg [1:0] layer_select;
     wire locked;
     wire clk_1;
     wire clk_2;
@@ -42,6 +43,7 @@ module controller_tb;
         .filter_clk(clk_1),
         .fm_read_clk(clk_1),
         .fm_write_clk(clk_1),
+        // .layer_select(layer_select),
         .reset(reset)
     );
 
@@ -70,6 +72,8 @@ module controller_tb;
                 uut.filter_data.xpm_memory_base_inst.mem[round * 5 + r] = temp;
             end
         end
+
+        layer_select = 0;
     end
 
     initial begin
