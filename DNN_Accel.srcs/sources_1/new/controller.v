@@ -59,9 +59,6 @@ module controller (
     // data buffer of bram, can update every KERNEL_SIZE cycles
     reg signed [7:0] filter_buffer [HEIGHT-1:0][WIDTH/2-1:0][4:0];
 
-    // before write back to bram
-    reg signed [7:0] output_buffer [8191:0];
-
     // same ifm data for all PEs
     reg signed [7:0] pe_ifm_data1 [MAX_PE_TILE_HEIGHT-1:0][MAX_PE_TILE_WIDTH-1:0][4:0];
     reg signed [7:0] pe_ifm_data2 [MAX_PE_TILE_HEIGHT-1:0][MAX_PE_TILE_WIDTH-1:0][4:0];
@@ -69,8 +66,9 @@ module controller (
     // same filter data for each 2 PEs
     reg signed [7:0] pe_filter_data [HEIGHT-1:0][WIDTH/2-1:0][4:0];
 
-    // cache ofm data from PE tiles
-    reg signed [7:0] pe_output_data [8191:0];
+    // cache ofm even column for later pooling
+    // only used in conv1
+    reg signed [7:0] pe_column_cache [7:0][31:0];
 
     // PE output signals for pipeline connections
     wire signed [20:0] psum_out1 [HEIGHT-1:0][WIDTH-1:0];
@@ -114,7 +112,6 @@ module controller (
     reg [15:0] load_count;
     // pick which column to store to buffer
     reg [15:0] store_count;
-    reg [15:0] pooling_count;
 
     // filter BRAM
     reg filter_data_we;
@@ -166,7 +163,7 @@ module controller (
 
         // Port A module ports
         .clka                    (filter_clk),
-        .rsta                    (),
+        .rsta                    (reset),
         .ena                     (1),
         .regcea                  (1),
         .wea                     (filter_data_we),
@@ -223,22 +220,80 @@ module controller (
         end
     end
 
+    // output feature map FIFO
+    reg ofm_fifo_wr_en;
+    reg [511:0] ofm_fifo_din [7:0];
+    wire ofm_fifo_empty [7:0];
+    wire [511:0] ofm_fifo_dout [7:0];
+
+    generate
+        for (i = 0; i < 8; i = i + 1) begin : gen_ofm_fifo
+            xpm_fifo_async # (
+
+                .FIFO_MEMORY_TYPE          ("auto"),           //string; "auto", "block", or "distributed";
+                .ECC_MODE                  ("no_ecc"),         //string; "no_ecc" or "en_ecc";
+                .RELATED_CLOCKS            (1),                //positive integer; 0 or 1
+                .FIFO_WRITE_DEPTH          (16),             //positive integer
+                .WRITE_DATA_WIDTH          (512),               //positive integer
+                .WR_DATA_COUNT_WIDTH       (4),               //positive integer
+                .PROG_FULL_THRESH          (10),               //positive integer
+                .FULL_RESET_VALUE          (0),                //positive integer; 0 or 1
+                .USE_ADV_FEATURES          ("0707"),           //string; "0000" to "1F1F"; 
+                .READ_MODE                 ("fwft"),            //string; "std" or "fwft";
+                .FIFO_READ_LATENCY         (1),                //positive integer;
+                .READ_DATA_WIDTH           (512),               //positive integer
+                .RD_DATA_COUNT_WIDTH       (4),               //positive integer
+                .PROG_EMPTY_THRESH         (10),               //positive integer
+                .DOUT_RESET_VALUE          ("0"),              //string
+                .CDC_SYNC_STAGES           (2),                //positive integer
+                .WAKEUP_TIME               (0)                 //positive integer; 0 or 2;
+
+            ) ofm_fifo_inst (
+
+                .rst              (reset),
+                .wr_clk           (clk),
+                .wr_en            (ofm_fifo_wr_en),
+                .din              (ofm_fifo_din[i]),
+                .full             (),
+                .overflow         (),
+                .prog_full        (),
+                .wr_data_count    (),
+                .almost_full      (),
+                .wr_ack           (),
+                .wr_rst_busy      (),
+                .rd_clk           (fm_write_clk),
+                .rd_en            (!ofm_fifo_empty[i]),
+                .dout             (ofm_fifo_dout[i]),
+                .empty            (ofm_fifo_empty[i]),
+                .underflow        (),
+                .rd_rst_busy      (),
+                .prog_empty       (),
+                .rd_data_count    (),
+                .almost_empty     (),
+                .data_valid       (),
+                .sleep            (1'b0),
+                .injectsbiterr    (1'b0),
+                .injectdbiterr    (1'b0),
+                .sbiterr          (),
+                .dbiterr          ()
+
+            );
+        end
+    endgenerate
+
     // feature map BRAM
-    reg fm_data_we;
-    reg [511:0] fm_data_din [7:0];
     wire [7:0] fm_data_read_addr [7:0];
-    wire [7:0] fm_data_write_addr;
+    wire [7:0] fm_data_write_addr [7:0];
     wire [511:0] fm_data_dout [7:0];
 
-    // tracked by bram
-    reg [15:0] last_write_back_count;
-    // set by pe array controller main logic
-    reg [15:0] current_write_back_count;
-
-    reg [7:0] fm_write_addr;
+    reg [7:0] fm_write_addr [7:0];
 
     localparam CONV1_OFM_BASE_ADDR = 0;
-    assign fm_data_write_addr = CONV1_OFM_BASE_ADDR + fm_write_addr;
+    generate
+        for (i = 0; i < 8; i = i + 1) begin
+            assign fm_data_write_addr[i] = CONV1_OFM_BASE_ADDR + fm_write_addr[i];
+        end
+    endgenerate
 
     generate
         for (i = 0; i < 8; i = i + 1) begin : gen_fm_bram
@@ -283,7 +338,7 @@ module controller (
 
                 // Port A module ports
                 .clka                    (fm_read_clk),
-                .rsta                    (),
+                .rsta                    (reset),
                 .ena                     (1),
                 .regcea                  (),
                 .wea                     (0),
@@ -297,12 +352,12 @@ module controller (
 
                 // Port B module ports
                 .clkb                    (fm_write_clk),
-                .rstb                    (),
+                .rstb                    (reset),
                 .enb                     (1),
                 .regceb                  (),
-                .web                     (fm_data_we),
-                .addrb                   (fm_data_write_addr),
-                .dinb                    (fm_data_din[i]),
+                .web                     (!ofm_fifo_empty[i]),
+                .addrb                   (fm_data_write_addr[i]),
+                .dinb                    (ofm_fifo_dout[i]),
                 .injectsbiterrb          (1'b0),
                 .injectdbiterrb          (1'b0),
                 .doutb                   (),
@@ -314,31 +369,11 @@ module controller (
     endgenerate
 
     always @(posedge fm_write_clk) begin
-        if (reset || current_write_back_count == 0) begin
-            fm_data_we <= 0;
-            last_write_back_count <= 0;
-            fm_write_addr <= 0;
-        end else begin
-            if (last_write_back_count < current_write_back_count) begin
-                fm_data_we <= 1;
-                last_write_back_count <= last_write_back_count + 1;
-                fm_write_addr <= last_write_back_count;
-
-                for (integer block = 0; block < 8; block = block + 1) begin
-                    fm_data_din[block] <= 0;
-                    if (block * (KERNEL_TYPE ? 5 : 3) <= HEIGHT) begin
-                        automatic integer c = last_write_back_count % OFM_SIZE_POOL;
-                        for (integer img_col = 0; img_col < (WIDTH / PE_TILE_WIDTH); img_col = img_col + 1) begin
-                            automatic integer img_index = block * (WIDTH / PE_TILE_WIDTH) + img_col;
-                            for (integer r = 0; r < OFM_SIZE_POOL; r = r + 1) begin
-                                automatic integer buffer_index = img_index * OFM_SIZE_POOL * OFM_SIZE_POOL + r * OFM_SIZE_POOL + c;
-                                fm_data_din[block][(img_col * OFM_SIZE_POOL + r) * 8 +: 8] <= output_buffer[buffer_index];
-                            end
-                        end
-                    end
-                end
+        for (integer i = 0; i < 8; i = i + 1) begin
+            if (reset) begin
+                fm_write_addr[i] <= 0;
             end else begin
-                fm_data_we <= 0;
+                fm_write_addr[i] <= fm_write_addr[i] + !ofm_fifo_empty[i];
             end
         end
     end
@@ -378,9 +413,7 @@ module controller (
             cycle_count <= 0;
             load_count <= 0;
             store_count <= 0;
-            pooling_count <= 0;
             current_load_round <= 0;
-            current_write_back_count <= 0;
             for (integer i = 0; i < MAX_PE_TILE_HEIGHT; i = i + 1) begin
                 start[i] <= 0;
             end
@@ -442,57 +475,58 @@ module controller (
                     store_count <= store_count + 1;
                 end
 
-                for (integer i = 0; i < HEIGHT; i = i + 1) begin
-                    if ((i + 1) % (KERNEL_TYPE ? 5 : 3) == 0) begin
-                        for (integer j = 0; j < WIDTH; j = j + 1) begin
-                            automatic integer img_r = i / (KERNEL_TYPE ? 5 : 3);
-                            automatic integer img_c = j / PE_TILE_WIDTH;
-                            automatic integer img_index = img_r * (WIDTH / PE_TILE_WIDTH) + img_c;
-                            automatic integer r = j % PE_TILE_WIDTH;
+                if (store_count % 2 == 0) begin
+                    for (integer i = 0; i < HEIGHT; i = i + 1) begin
+                        if ((i + 1) % (KERNEL_TYPE ? 5 : 3) == 0) begin
+                            for (integer j = 0; j < WIDTH; j = j + 1) begin
+                                automatic integer img_r = i / (KERNEL_TYPE ? 5 : 3);
+                                automatic integer img_c = j / PE_TILE_WIDTH;
+                                automatic integer img_index = img_r * (WIDTH / PE_TILE_WIDTH) + img_c;
+                                automatic integer r = j % PE_TILE_WIDTH;
 
-                            automatic integer index1 = img_index * OFM_SIZE * OFM_SIZE + r * OFM_SIZE + store_count;
-                            automatic integer index2 = img_index * OFM_SIZE * OFM_SIZE + (r + PE_TILE_WIDTH) * OFM_SIZE + store_count;
+                                pe_column_cache[img_index][r] <= quantize_relu(psum_out1[i][j]);
+                                pe_column_cache[img_index][r + PE_TILE_WIDTH] <= quantize_relu(psum_out2[i][j]);
+                            end
+                        end
+                    end
+                end else begin
+                    // perform 2x2 max pooling
+                    for (integer img_index = 0; img_index < (HEIGHT / (KERNEL_TYPE ? 5 : 3)) * (WIDTH / PE_TILE_WIDTH); img_index = img_index + 1) begin
+                        for (integer r = 0; r < OFM_SIZE_POOL; r = r + 1) begin
+                            automatic integer pe_r = r * 2;
+                            automatic integer i = (img_index / (WIDTH / PE_TILE_WIDTH) + 1) * (KERNEL_TYPE ? 5 : 3) - 1;
+                            automatic integer j = (img_index % (WIDTH / PE_TILE_WIDTH)) * PE_TILE_WIDTH;
 
-                            pe_output_data[index1] <= quantize_relu(psum_out1[i][j]);
-                            pe_output_data[index2] <= quantize_relu(psum_out2[i][j]);
+                            automatic integer block = img_index / (WIDTH / PE_TILE_WIDTH);
+                            automatic integer byte_position = (img_index % (WIDTH / PE_TILE_WIDTH)) * OFM_SIZE_POOL + r;
+
+                            automatic reg [7:0] val1 = pe_column_cache[img_index][pe_r];
+                            automatic reg [7:0] val2 = pe_column_cache[img_index][pe_r + 1];
+                            automatic reg [7:0] val3 = quantize_relu(pe_r < PE_TILE_WIDTH
+                                ? psum_out1[i][j + pe_r]
+                                : psum_out2[i][j + pe_r - PE_TILE_WIDTH]
+                            );
+                            automatic reg [7:0] val4 = quantize_relu(pe_r + 1 < PE_TILE_WIDTH
+                                ? psum_out1[i][j + pe_r + 1]
+                                : psum_out2[i][j + pe_r + 1 - PE_TILE_WIDTH]
+                            );
+
+                            automatic reg [7:0] max1 = (val1 > val2) ? val1 : val2;
+                            automatic reg [7:0] max2 = (val3 > val4) ? val3 : val4;
+                            ofm_fifo_din[block][byte_position * 8 +: 8] <= (max1 > max2) ? max1 : max2;
                         end
                     end
                 end
             end
 
-            // pooling every 2 output columns are ready
-            if (cycle_count >= time_start_pooling
-                    && cycle_count < time_start_pooling + OFM_SIZE * (KERNEL_TYPE ? 5 : 3) * 4       // HARD CODED, NEED TO CHANGE AT CONV 2-4
-                    && (cycle_count - time_start_pooling) % ((KERNEL_TYPE ? 5 : 3) * 2) == 0) begin
-                if (pooling_count == OFM_SIZE_POOL - 1) begin
-                    pooling_count <= 0;
-                end else begin
-                    pooling_count <= pooling_count + 1;
-                end
-
-                current_write_back_count <= current_write_back_count + 1;
-
-                // perform 2x2 max pooling
-                for (integer img_index = 0; img_index < (HEIGHT / (KERNEL_TYPE ? 5 : 3)) * (WIDTH / PE_TILE_WIDTH); img_index = img_index + 1) begin
-                    for (integer r = 0; r < OFM_SIZE_POOL; r = r + 1) begin
-                        automatic integer buffer_index = img_index * OFM_SIZE_POOL * OFM_SIZE_POOL + r * OFM_SIZE_POOL + pooling_count;
-                        automatic integer pe_r = r * 2;
-                        automatic integer pe_c = pooling_count * 2;
-                        automatic integer index1 = img_index * OFM_SIZE * OFM_SIZE + pe_r * OFM_SIZE + pe_c;
-                        automatic integer index2 = img_index * OFM_SIZE * OFM_SIZE + pe_r * OFM_SIZE + (pe_c + 1);
-                        automatic integer index3 = img_index * OFM_SIZE * OFM_SIZE + (pe_r + 1) * OFM_SIZE + pe_c;
-                        automatic integer index4 = img_index * OFM_SIZE * OFM_SIZE + (pe_r + 1) * OFM_SIZE + (pe_c + 1);
-
-                        automatic reg [7:0] val1 = pe_output_data[index1];
-                        automatic reg [7:0] val2 = pe_output_data[index2];
-                        automatic reg [7:0] val3 = pe_output_data[index3];
-                        automatic reg [7:0] val4 = pe_output_data[index4];
-
-                        automatic reg [7:0] max1 = (val1 > val2) ? val1 : val2;
-                        automatic reg [7:0] max2 = (val3 > val4) ? val3 : val4;
-                        output_buffer[buffer_index] <= (max1 > max2) ? max1 : max2;
-                    end
-                end
+            // generate ofm fifo write enable signal
+            if (cycle_count >= time_start_read
+                    && cycle_count < time_start_read + 640
+                    && (cycle_count - time_start_read) % (KERNEL_TYPE ? 5 : 3) == 0
+                    && (store_count % 2 == 1)) begin
+                ofm_fifo_wr_en <= 1;
+            end else begin
+                ofm_fifo_wr_en <= 0;
             end
 
             // generate start signals
