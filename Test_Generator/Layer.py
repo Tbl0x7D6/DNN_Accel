@@ -1,0 +1,65 @@
+import numpy as np
+import os
+
+np.random.seed(114514)
+
+IFM_H, IFM_W, IFM_C = 5, 5, 64
+OFM_H, OFM_W, OFM_C = 5, 5, 32
+K_H, K_W = 3, 3
+STRIDE = 1
+PAD = 1
+
+os.makedirs('Test_Generator/data', exist_ok=True)
+
+ifm = np.random.randint(-10, 10, size=(IFM_C, IFM_H, IFM_W)).astype(np.int8)
+
+weights = np.random.randint(-10, 10, size=(OFM_C, IFM_C, K_H, K_W)).astype(np.int8)
+
+ofm = np.zeros((OFM_C, OFM_H, OFM_W), dtype=np.int32)
+
+ifm_padded = np.pad(ifm, ((0,0), (PAD, PAD), (PAD, PAD)), mode='constant')
+
+print("Computing Golden Model...")
+for oc in range(OFM_C):
+    for oh in range(OFM_H):
+        for ow in range(OFM_W):
+            acc = 0
+            # Spatial loop
+            for kh in range(K_H):
+                for kw in range(K_W):
+                    # Input coords
+                    ih = oh * STRIDE + kh
+                    iw = ow * STRIDE + kw
+                    
+                    # Accumulate over IC
+                    for ic in range(IFM_C):
+                        val = int(ifm_padded[ic, ih, iw])
+                        w = int(weights[oc, ic, kh, kw])
+                        acc += val * w
+            ofm[oc, oh, ow] = acc
+
+# Transpose to (H, W, C)
+ifm_transposed = ifm.transpose(1, 2, 0)
+# Flatten
+ifm_u8 = ifm_transposed.flatten().astype(np.uint8)
+np.savetxt('Test_Generator/data/ifm.txt', ifm_u8, fmt='%02x')
+
+# Transpose to (K_H, K_W, IC, OC)
+weights_transposed = weights.transpose(2, 3, 1, 0)
+# Flatten
+wgt_u8 = weights_transposed.flatten().astype(np.uint8)
+np.savetxt('Test_Generator/data/weights.txt', wgt_u8, fmt='%02x')
+
+# Transpose to (H, W, C)
+ofm_transposed = ofm.transpose(1, 2, 0)
+# Flatten
+ofm_flat = ofm_transposed.flatten()
+# Use a custom format for 32-bit signed integers
+with open('Test_Generator/data/golden.txt', 'w') as f:
+    for val in ofm_flat:
+        # Handle negative numbers for 32-bit hex
+        val = int(val)
+        val_u32 = val & 0xFFFFFFFF
+        f.write(f'{val_u32:08x}\n')
+
+print("Data generation complete.")
