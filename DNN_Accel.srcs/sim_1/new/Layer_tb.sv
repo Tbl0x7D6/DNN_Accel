@@ -105,7 +105,8 @@ module Layer_tb;
                 for (k_idx = 0; k_idx < 32; k_idx = k_idx + 1) begin
                     logic [31:0] dut_output;
                     idx = (i * 5 + j) * 32 + k_idx;
-                    dut_output = uut.ofm_data[i][j][k_idx];
+                    // dut_output = uut.ofm_data[i][j][k_idx];
+                    dut_output = uut.ofm_data[idx];
                     if (dut_output !== golden_mem[idx]) begin
                         $display("Mismatch at OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
                                 i, j, k_idx, dut_output, golden_mem[idx]);
