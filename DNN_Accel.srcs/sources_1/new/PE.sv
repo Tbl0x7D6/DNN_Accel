@@ -1,5 +1,6 @@
 `timescale 1ns / 1ps
 
+(* use_dsp = "yes" *)
 module PE #(
     parameter DATA_WIDTH = 8,
     parameter PE_ACC_WIDTH = 21
@@ -15,7 +16,7 @@ module PE #(
     output logic signed [PE_ACC_WIDTH-1:0] cout
 );
 
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge clk) begin
         if (!rst_n) begin
             aout <= '0;
             cout <= '0;
