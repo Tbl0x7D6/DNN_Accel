@@ -38,10 +38,9 @@ module Layer #(
 
     logic input_fifo_wr_en [0:15];
     logic input_fifo_rd_en [0:15];
-    logic input_fifo_empty [0:15];
     logic input_fifo_full  [0:15];
-    logic signed [PE_ACC_WIDTH-1:0] input_fifo_din  [0:15];
-    logic signed [PE_ACC_WIDTH-1:0] input_fifo_dout [0:15];
+    logic signed [DATA_WIDTH-1:0] input_fifo_din  [0:15];
+    logic signed [DATA_WIDTH-1:0] input_fifo_dout [0:15];
 
     logic input_fifo_can_write;
 
@@ -90,7 +89,76 @@ module Layer #(
                 .wr_rst_busy      (),
                 .rd_en            (input_fifo_rd_en[i]),
                 .dout             (input_fifo_dout[i]),
-                .empty            (input_fifo_empty[i]),
+                .empty            (),
+                .prog_empty       (),
+                .rd_data_count    (),
+                .almost_empty     (),
+                .data_valid       (),
+                .underflow        (),
+                .rd_rst_busy      (),
+                .injectsbiterr    (1'b0),
+                .injectdbiterr    (1'b0),
+                .sbiterr          (),
+                .dbiterr          ()
+
+            );
+        end
+    endgenerate
+
+    logic filter_fifo_wr_en [0:15];
+    logic filter_fifo_rd_en [0:15];
+    logic filter_fifo_full  [0:15];
+    logic signed [DATA_WIDTH-1:0] filter_fifo_din  [0:15];
+    logic signed [DATA_WIDTH-1:0] filter_fifo_dout [0:15];
+
+    logic filter_fifo_can_write;
+
+    always_comb begin
+        filter_fifo_can_write = 1;
+        for (integer i = 0; i < 16; i++) begin
+            if (filter_fifo_full[i]) begin
+                filter_fifo_can_write = 0;
+            end
+        end
+    end
+
+    generate
+        for (genvar i = 0; i < 16; i++) begin : FILTER_FIFO_GEN
+            xpm_fifo_sync # (
+
+                .FIFO_MEMORY_TYPE          ("auto"),           //string; "auto", "block", "distributed", or "ultra";
+                .ECC_MODE                  ("no_ecc"),         //string; "no_ecc" or "en_ecc";
+                .FIFO_WRITE_DEPTH          (32),             //positive integer
+                .WRITE_DATA_WIDTH          (DATA_WIDTH),               //positive integer
+                .WR_DATA_COUNT_WIDTH       (5),               //positive integer
+                .PROG_FULL_THRESH          (20),               //positive integer
+                .FULL_RESET_VALUE          (0),                //positive integer; 0 or 1
+                .USE_ADV_FEATURES          ("0707"),           //string; "0000" to "1F1F"; 
+                .READ_MODE                 ("fwft"),            //string; "std" or "fwft";
+                .FIFO_READ_LATENCY         (1),                //positive integer;
+                .READ_DATA_WIDTH           (DATA_WIDTH),               //positive integer
+                .RD_DATA_COUNT_WIDTH       (5),               //positive integer
+                .PROG_EMPTY_THRESH         (10),               //positive integer
+                .DOUT_RESET_VALUE          ("0"),              //string
+                .WAKEUP_TIME               (0)                 //positive integer; 0 or 2;
+
+            ) xpm_fifo_sync_inst (
+
+                .sleep            (1'b0),
+                .rst              (~rst_n),
+                .wr_clk           (clk),
+                .wr_en            (filter_fifo_wr_en[i]),
+                .din              (filter_fifo_din[i]),
+                .full             (),
+                .overflow         (),
+                .prog_full        (filter_fifo_full[i]),
+                .wr_data_count    (),
+                .almost_full      (),
+                .wr_ack           (),
+                .wr_rst_busy      (),
+                .rd_en            (filter_fifo_rd_en[i]),
+                .dout             (filter_fifo_dout[i]),
+                .empty            (),
                 .prog_empty       (),
                 .rd_data_count    (),
                 .almost_empty     (),
@@ -187,7 +255,8 @@ module Layer #(
         ofm_channel_tiles = (ofm_channels + 15) / 16;
     end
 
-    logic signed [DATA_WIDTH-1:0] ifm_data    [0:31][0:31][0:127];
+    logic signed [DATA_WIDTH-1:0] ifm_data    [0:32767];
+    // logic signed [DATA_WIDTH-1:0] filter_data [0:73727];
     logic signed [DATA_WIDTH-1:0] filter_data [0:4][0:4][0:127][0:127];
     logic signed [ACC_WIDTH-1:0]  ofm_data    [0:32767];
 
@@ -234,7 +303,8 @@ module Layer #(
                     if (input_is_pad) begin
                         input_fifo_din[i] <= '0;
                     end else begin
-                        input_fifo_din[i] <= ifm_data[input_iy][input_ix][i + input_ifm_tile * 16];
+                        automatic logic [15:0] addr = (input_iy * img_size + input_ix) * ifm_channels + i + input_ifm_tile * 16;
+                        input_fifo_din[i] <= ifm_data[addr];
                     end
                 end
             end
@@ -242,9 +312,71 @@ module Layer #(
     end
 
 
-    logic [3:0] kx, ky;
-    logic [3:0] ifm_tile;
-    logic [3:0] ofm_tile;
+    logic       filter_input_done;
+    logic       filter_input_next;
+    logic [3:0] filter_input_kx;
+    logic [3:0] filter_input_ky;
+    logic [3:0] filter_input_ifm_tile;
+    logic [3:0] filter_input_ofm_tile;
+
+    logic [15:0] filter_input_count;
+
+    AGU filter_input_agu (
+        .clk(clk),
+        .rst_n(rst_n),
+        .next(filter_input_next),
+        .img_size(img_size),
+        .k_size(k_size),
+        .stride(stride),
+        .padding(padding),
+        .ifm_channels(ifm_channels),
+        .ofm_channels(ofm_channels),
+        .ix(),
+        .iy(),
+        .ox(),
+        .oy(),
+        .kx(filter_input_kx),
+        .ky(filter_input_ky),
+        .ifm_tile(filter_input_ifm_tile),
+        .ofm_tile(filter_input_ofm_tile),
+        .is_pad(),
+        .done(filter_input_done)
+    );
+
+    always_comb begin
+        filter_input_next = filter_fifo_can_write && filter_input_count < out_size * out_size;
+    end
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            for (integer i = 0; i < 16; i++) begin
+                filter_fifo_wr_en[i] <= 0;
+            end
+            filter_input_count <= 0;
+        end else begin
+            for (integer i = 0; i < 16; i++) begin
+                filter_fifo_wr_en[i] <= filter_fifo_can_write && !filter_input_done && filter_input_count < 16;
+            end
+            if (filter_fifo_can_write && !filter_input_done) begin
+                filter_input_count <= filter_input_count + 1;
+                if (filter_input_count >= out_size * out_size - 1 && filter_input_count >= 16 - 1) begin
+                    filter_input_count <= 0;
+                end
+
+                if (filter_input_count < 16) begin
+                    for (integer i = 0; i < 16; i++) begin
+                        // automatic logic [31:0] addr = ((filter_input_ky * k_size + filter_input_kx) * ifm_channels
+                        //                                     + (filter_input_ifm_tile * 16 + filter_input_count)) * ofm_channels
+                        //                                     + (filter_input_ofm_tile * 16 + i);
+                        // filter_fifo_din[i] <= filter_data[addr];
+                        filter_fifo_din[i] <= filter_data[filter_input_ky][filter_input_kx][filter_input_ifm_tile * 16 + filter_input_count][filter_input_ofm_tile * 16 + i];
+                    end
+                end
+            end
+        end
+    end
+
+
     logic [7:0] wait_count;
     logic [31:0] pe_cycle_count;
 
@@ -256,11 +388,17 @@ module Layer #(
                 input_fifo_rd_en[i] = 0;
             end
         end
+        for (integer i = 0; i < 16; i++) begin
+            if (wait_count == 5 && pe_cycle_count < 16) begin
+                filter_fifo_rd_en[i] = 1;
+            end else begin
+                filter_fifo_rd_en[i] = 0;
+            end
+        end
     end
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            {kx, ky, ifm_tile, ofm_tile} <= 0;
             pe_cycle_count <= 0;
             wait_count <= 0;
 
@@ -277,29 +415,12 @@ module Layer #(
                 // switch to next kernel position
                 if (pe_cycle_count >= out_size * out_size + 16 + 16 + 5) begin
                     pe_cycle_count <= 0;
-
-                    kx <= kx + 1;
-                    if (kx == k_size - 1) begin
-                        kx <= 0;
-                        ky <= ky + 1;
-                        if (ky == k_size - 1) begin
-                            ky <= 0;
-                            ifm_tile <= ifm_tile + 1;
-                            if (ifm_tile == ifm_channel_tiles - 1) begin
-                                ifm_tile <= 0;
-                                ofm_tile <= ofm_tile + 1;
-                                if (ofm_tile == ofm_channel_tiles - 1) begin
-                                    ofm_tile <= 0;
-                                end
-                            end
-                        end
-                    end
                 end
-                if (pe_cycle_count == 0) begin
-                    for (integer ic = 0; ic < 16; ic++) begin
-                        for (integer oc = 0; oc < 16; oc++) begin
-                            weight_in[ic][oc] <= filter_data[ky][kx][ic + ifm_tile * 16][oc + ofm_tile * 16];
-                        end
+
+                // load weights
+                if (pe_cycle_count < 16) begin
+                    for (integer oc = 0; oc < 16; oc++) begin
+                        weight_in[pe_cycle_count][oc] <= filter_fifo_dout[oc];
                     end
                 end
 
