@@ -22,9 +22,9 @@ os.makedirs('Test_Generator/data', exist_ok=True)
 with open('Test_Generator/data/config.txt', 'w') as f:
     f.write(f'{IFM_H} {IFM_C} {OFM_H} {OFM_C} {K_H} {STRIDE} {PAD}\n')
 
-ifm = np.random.randint(-10, 10, size=(IFM_C, IFM_H, IFM_W)).astype(np.int8)
+ifm = np.random.randint(-50, 50, size=(IFM_C, IFM_H, IFM_W)).astype(np.int8)
 
-weights = np.random.randint(-10, 10, size=(OFM_C, IFM_C, K_H, K_W)).astype(np.int8)
+weights = np.random.randint(-50, 50, size=(OFM_C, IFM_C, K_H, K_W)).astype(np.int8)
 
 ofm = np.zeros((OFM_C, OFM_H, OFM_W), dtype=np.int32)
 

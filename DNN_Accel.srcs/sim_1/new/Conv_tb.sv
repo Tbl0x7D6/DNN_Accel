@@ -10,7 +10,8 @@ module Conv_tb;
     // Clock and Reset
     logic clk;
     logic rst_n;
-    
+    logic conv_rst_n;
+
     // Configuration Inputs
     // Initialize to ensure valid values at time 0 for Layer module initialization
     logic [7:0] img_size = 5;
@@ -31,6 +32,8 @@ module Conv_tb;
 
     logic [DATA_WIDTH*16-1:0] ifm_data;
     logic [15:0]              ifm_addr;
+    logic [DATA_WIDTH*16-1:0] ifm_wr_data;
+    logic                     ifm_wr_en = 0;
 
     logic [DATA_WIDTH*16-1:0] filter_data;
     logic [15:0]              filter_addr;
@@ -47,7 +50,7 @@ module Conv_tb;
         .PE_ACC_WIDTH(PE_ACC_WIDTH)
     ) layer_inst (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst_n(conv_rst_n),
         .img_size(img_size),
         .k_size(k_size),
         .stride(stride),
@@ -99,9 +102,9 @@ module Conv_tb;
         .rsta                    (~rst_n),
         .ena                     (1),
         .regcea                  (),
-        .wea                     (0),
+        .wea                     (ifm_wr_en),
         .addra                   (ifm_addr),
-        .dina                    ({DATA_WIDTH*16{1'b0}}),
+        .dina                    (ifm_wr_data),
         .injectsbiterra          (1'b0),
         .injectdbiterra          (1'b0),
         .douta                   (ifm_data),
@@ -262,8 +265,10 @@ module Conv_tb;
         
         // 3. Reset Sequence
         rst_n = 0;
+        conv_rst_n = 0;
         #100;
         rst_n = 1;
+        conv_rst_n = 1;
         
         // 4. Wait for Completion
         wait(done);
