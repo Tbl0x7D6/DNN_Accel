@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module Layer #(
+module Conv #(
     parameter DATA_WIDTH = 8,
     parameter ACC_WIDTH = 26,
     parameter PE_ACC_WIDTH = 21

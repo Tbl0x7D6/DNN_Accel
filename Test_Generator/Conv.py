@@ -3,13 +3,24 @@ import os
 
 np.random.seed(114514)
 
-IFM_H, IFM_W, IFM_C = 5, 5, 64
-OFM_H, OFM_W, OFM_C = 5, 5, 32
-K_H, K_W = 3, 3
-STRIDE = 1
-PAD = 1
+img_size = input("Enter image size (e.g., 5 for 5x5): ")
+ic = input("Enter number of input channels (e.g., 64): ")
+out_size = input("Enter output feature map size (e.g., 5 for 5x5): ")
+oc = input("Enter number of output channels (e.g., 32): ")
+kernel_size = input("Enter kernel size (e.g., 3 for 3x3): ")
+stride = input("Enter stride (e.g., 1): ")
+padding = input("Enter padding (e.g., 1): ")
+
+IFM_H, IFM_W, IFM_C = int(img_size), int(img_size), int(ic)
+OFM_H, OFM_W, OFM_C = int(out_size), int(out_size), int(oc)
+K_H, K_W = int(kernel_size), int(kernel_size)
+STRIDE = int(stride)
+PAD = int(padding)
 
 os.makedirs('Test_Generator/data', exist_ok=True)
+
+with open('Test_Generator/data/config.txt', 'w') as f:
+    f.write(f'{IFM_H} {IFM_C} {OFM_H} {OFM_C} {K_H} {STRIDE} {PAD}\n')
 
 ifm = np.random.randint(-10, 10, size=(IFM_C, IFM_H, IFM_W)).astype(np.int8)
 
