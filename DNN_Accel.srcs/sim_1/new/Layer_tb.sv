@@ -4,6 +4,7 @@ module Layer_tb;
 
     // Parameters
     parameter DATA_WIDTH = 8;
+    parameter ACC_WIDTH = 26;
     
     // Clock and Reset
     logic clk;
@@ -13,6 +14,7 @@ module Layer_tb;
     // Initialize to ensure valid values at time 0 for Layer module initialization
     logic [7:0] img_size = 5;
     logic [3:0] k_size = 3;
+    logic [7:0] out_size = 5;
     logic [1:0] stride = 1;
     logic [1:0] padding = 1;
 
@@ -24,7 +26,7 @@ module Layer_tb;
     // Test Data Memories
     logic signed [DATA_WIDTH-1:0] ifm_mem [0:1600-1]; 
     logic signed [DATA_WIDTH-1:0] wgt_mem [0:18432-1];
-    logic [31:0] golden_mem [0:800-1];
+    logic signed [31:0] golden_mem [0:800-1];
     
     // DUT Instance
     Layer uut (
@@ -45,7 +47,7 @@ module Layer_tb;
         forever #5 clk = ~clk;
     end
     
-    integer i, j, k_idx, l;
+    integer i, j, k, l, m;
     integer idx;
     
     initial begin
@@ -56,21 +58,28 @@ module Layer_tb;
         $readmemh("c:/Users/be/Desktop/DNN_Accel/Test_Generator/data/golden.txt", golden_mem);
         
         // 2. Initialize DUT Internal Memories
-        for (i = 0; i < 5; i = i + 1) begin
-            for (j = 0; j < 5; j = j + 1) begin
-                for (k_idx = 0; k_idx < 64; k_idx = k_idx + 1) begin
-                    idx = (i * 5 + j) * 64 + k_idx;
-                    uut.ifm_data[idx] = ifm_mem[idx];
+        for (i = 0; i < img_size; i = i + 1) begin
+            for (j = 0; j < img_size; j = j + 1) begin
+                for (k = 0; k < ifm_channels / 16; k = k + 1) begin
+                    logic [DATA_WIDTH*16-1:0] tmp_ifm;
+                    idx = (i * img_size + j) * (ifm_channels / 16) + k;
+                    for (l = 0; l < 16; l = l + 1) begin
+                        tmp_ifm[l*DATA_WIDTH +: DATA_WIDTH] = ifm_mem[idx * 16 + l];
+                    end
+                    uut.ifm_data[idx] = tmp_ifm;
                 end
             end
         end
-        for (i = 0; i < 3; i = i + 1) begin
-            for (j = 0; j < 3; j = j + 1) begin
-                for (k_idx = 0; k_idx < 64; k_idx = k_idx + 1) begin
-                    for (l = 0; l < 32; l = l + 1) begin
-                        idx = ((i * 3 + j) * 64 + k_idx) * 32 + l;
-                        // uut.filter_data[idx] = wgt_mem[idx];
-                        uut.filter_data[i][j][k_idx][l] = wgt_mem[idx];
+        for (i = 0; i < k_size; i = i + 1) begin
+            for (j = 0; j < k_size; j = j + 1) begin
+                for (k = 0; k < ifm_channels; k = k + 1) begin
+                    for (l = 0; l < ofm_channels / 16; l = l + 1) begin
+                        logic [DATA_WIDTH*16-1:0] tmp_weight;
+                        idx = ((i * k_size + j) * ifm_channels + k) * (ofm_channels / 16) + l;
+                        for (m = 0; m < 16; m = m + 1) begin
+                            tmp_weight[m*DATA_WIDTH +: DATA_WIDTH] = wgt_mem[idx * 16 + m]; 
+                        end
+                        uut.filter_data[idx] = tmp_weight;
                     end
                 end
             end
@@ -88,16 +97,28 @@ module Layer_tb;
         $display("Simulation Finished.");
         
         // 5. Check Results
-        for (i = 0; i < 5; i = i + 1) begin
-            for (j = 0; j < 5; j = j + 1) begin
-                for (k_idx = 0; k_idx < 32; k_idx = k_idx + 1) begin
-                    logic [31:0] dut_output;
-                    idx = (i * 5 + j) * 32 + k_idx;
+        for (i = 0; i < out_size; i = i + 1) begin
+            for (j = 0; j < out_size; j = j + 1) begin
+                for (k = 0; k < ofm_channels / 16; k = k + 1) begin
+                    logic signed [ACC_WIDTH*16-1:0] dut_output;
+                    idx = (i * out_size + j) * (ofm_channels / 16) + k;
                     dut_output = uut.ofm_data[idx];
-                    if (dut_output !== golden_mem[idx]) begin
-                        $display("Mismatch at OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
-                                i, j, k_idx, dut_output, golden_mem[idx]);
+                    for (l = 0; l < 16; l = l + 1) begin
+                        logic signed [ACC_WIDTH-1:0] dut_val;
+                        dut_val = $signed(dut_output[l*ACC_WIDTH +: ACC_WIDTH]);
+                        // if (dut_output[l*26 +: 26] !== golden_mem[idx * 16 + l]) begin
+                        //     $display("Mismatch at OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
+                        //             i, j, k * 16 + l, dut_output[l*26 +: 26], golden_mem[idx * 16 + l]);
+                        // end
+                        if (dut_val !== golden_mem[idx * 16 + l]) begin
+                            $display("Mismatch at OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
+                                    i, j, k * 16 + l, dut_val, golden_mem[idx * 16 + l]);
+                        end
                     end
+                    // if (dut_output !== golden_mem[idx]) begin
+                    //     $display("Mismatch at OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
+                    //             i, j, k, dut_output, golden_mem[idx]);
+                    // end
                 end
             end
         end

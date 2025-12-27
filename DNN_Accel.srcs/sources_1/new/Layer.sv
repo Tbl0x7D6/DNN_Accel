@@ -19,6 +19,10 @@ module Layer #(
     output logic done
 );
 
+    (* ram_style = "block" *) logic signed [DATA_WIDTH*16-1:0] ifm_data    [0:2048-1];
+    (* ram_style = "block" *) logic signed [DATA_WIDTH*16-1:0] filter_data [0:4608-1];
+    (* ram_style = "block" *) logic signed [ACC_WIDTH *16-1:0] ofm_data    [0:2048-1];
+
     logic signed [DATA_WIDTH-1:0] ifm_in [0:15];
     logic signed [DATA_WIDTH-1:0] weight_in [0:15][0:15];
     logic signed [PE_ACC_WIDTH-1:0] psum_out [0:15];
@@ -89,75 +93,6 @@ module Layer #(
                 .wr_rst_busy      (),
                 .rd_en            (input_fifo_rd_en[i]),
                 .dout             (input_fifo_dout[i]),
-                .empty            (),
-                .prog_empty       (),
-                .rd_data_count    (),
-                .almost_empty     (),
-                .data_valid       (),
-                .underflow        (),
-                .rd_rst_busy      (),
-                .injectsbiterr    (1'b0),
-                .injectdbiterr    (1'b0),
-                .sbiterr          (),
-                .dbiterr          ()
-
-            );
-        end
-    endgenerate
-
-    logic filter_fifo_wr_en [0:15];
-    logic filter_fifo_rd_en [0:15];
-    logic filter_fifo_full  [0:15];
-    logic signed [DATA_WIDTH-1:0] filter_fifo_din  [0:15];
-    logic signed [DATA_WIDTH-1:0] filter_fifo_dout [0:15];
-
-    logic filter_fifo_can_write;
-
-    always_comb begin
-        filter_fifo_can_write = 1;
-        for (integer i = 0; i < 16; i++) begin
-            if (filter_fifo_full[i]) begin
-                filter_fifo_can_write = 0;
-            end
-        end
-    end
-
-    generate
-        for (genvar i = 0; i < 16; i++) begin : FILTER_FIFO_GEN
-            xpm_fifo_sync # (
-
-                .FIFO_MEMORY_TYPE          ("auto"),           //string; "auto", "block", "distributed", or "ultra";
-                .ECC_MODE                  ("no_ecc"),         //string; "no_ecc" or "en_ecc";
-                .FIFO_WRITE_DEPTH          (32),             //positive integer
-                .WRITE_DATA_WIDTH          (DATA_WIDTH),               //positive integer
-                .WR_DATA_COUNT_WIDTH       (5),               //positive integer
-                .PROG_FULL_THRESH          (20),               //positive integer
-                .FULL_RESET_VALUE          (0),                //positive integer; 0 or 1
-                .USE_ADV_FEATURES          ("0707"),           //string; "0000" to "1F1F"; 
-                .READ_MODE                 ("fwft"),            //string; "std" or "fwft";
-                .FIFO_READ_LATENCY         (1),                //positive integer;
-                .READ_DATA_WIDTH           (DATA_WIDTH),               //positive integer
-                .RD_DATA_COUNT_WIDTH       (5),               //positive integer
-                .PROG_EMPTY_THRESH         (10),               //positive integer
-                .DOUT_RESET_VALUE          ("0"),              //string
-                .WAKEUP_TIME               (0)                 //positive integer; 0 or 2;
-
-            ) xpm_fifo_sync_inst (
-
-                .sleep            (1'b0),
-                .rst              (~rst_n),
-                .wr_clk           (clk),
-                .wr_en            (filter_fifo_wr_en[i]),
-                .din              (filter_fifo_din[i]),
-                .full             (),
-                .overflow         (),
-                .prog_full        (filter_fifo_full[i]),
-                .wr_data_count    (),
-                .almost_full      (),
-                .wr_ack           (),
-                .wr_rst_busy      (),
-                .rd_en            (filter_fifo_rd_en[i]),
-                .dout             (filter_fifo_dout[i]),
                 .empty            (),
                 .prog_empty       (),
                 .rd_data_count    (),
@@ -247,18 +182,9 @@ module Layer #(
     endgenerate
 
     logic [7:0] out_size;
-    logic [7:0] ifm_channel_tiles;
-    logic [7:0] ofm_channel_tiles;
     always_comb begin
         out_size = ((img_size + 2 * padding - k_size) / stride) + 1;
-        ifm_channel_tiles = (ifm_channels + 15) / 16;
-        ofm_channel_tiles = (ofm_channels + 15) / 16;
     end
-
-    logic signed [DATA_WIDTH-1:0] ifm_data    [0:32767];
-    // logic signed [DATA_WIDTH-1:0] filter_data [0:73727];
-    logic signed [DATA_WIDTH-1:0] filter_data [0:4][0:4][0:127][0:127];
-    logic signed [ACC_WIDTH-1:0]  ofm_data    [0:32767];
 
 
     logic       input_is_pad;
@@ -299,77 +225,12 @@ module Layer #(
                 input_fifo_wr_en[i] <= input_fifo_can_write && !input_done;
             end
             if (input_fifo_can_write && !input_done) begin
+                automatic logic [15:0] addr = (input_iy * img_size + input_ix) * (ifm_channels / 16) + input_ifm_tile;
                 for (integer i = 0; i < 16; i++) begin
                     if (input_is_pad) begin
                         input_fifo_din[i] <= '0;
                     end else begin
-                        automatic logic [15:0] addr = (input_iy * img_size + input_ix) * ifm_channels + i + input_ifm_tile * 16;
-                        input_fifo_din[i] <= ifm_data[addr];
-                    end
-                end
-            end
-        end
-    end
-
-
-    logic       filter_input_done;
-    logic       filter_input_next;
-    logic [3:0] filter_input_kx;
-    logic [3:0] filter_input_ky;
-    logic [3:0] filter_input_ifm_tile;
-    logic [3:0] filter_input_ofm_tile;
-
-    logic [15:0] filter_input_count;
-
-    AGU filter_input_agu (
-        .clk(clk),
-        .rst_n(rst_n),
-        .next(filter_input_next),
-        .img_size(img_size),
-        .k_size(k_size),
-        .stride(stride),
-        .padding(padding),
-        .ifm_channels(ifm_channels),
-        .ofm_channels(ofm_channels),
-        .ix(),
-        .iy(),
-        .ox(),
-        .oy(),
-        .kx(filter_input_kx),
-        .ky(filter_input_ky),
-        .ifm_tile(filter_input_ifm_tile),
-        .ofm_tile(filter_input_ofm_tile),
-        .is_pad(),
-        .done(filter_input_done)
-    );
-
-    always_comb begin
-        filter_input_next = filter_fifo_can_write && filter_input_count < out_size * out_size;
-    end
-
-    always_ff @(posedge clk) begin
-        if (!rst_n) begin
-            for (integer i = 0; i < 16; i++) begin
-                filter_fifo_wr_en[i] <= 0;
-            end
-            filter_input_count <= 0;
-        end else begin
-            for (integer i = 0; i < 16; i++) begin
-                filter_fifo_wr_en[i] <= filter_fifo_can_write && !filter_input_done && filter_input_count < 16;
-            end
-            if (filter_fifo_can_write && !filter_input_done) begin
-                filter_input_count <= filter_input_count + 1;
-                if (filter_input_count >= out_size * out_size - 1 && filter_input_count >= 16 - 1) begin
-                    filter_input_count <= 0;
-                end
-
-                if (filter_input_count < 16) begin
-                    for (integer i = 0; i < 16; i++) begin
-                        // automatic logic [31:0] addr = ((filter_input_ky * k_size + filter_input_kx) * ifm_channels
-                        //                                     + (filter_input_ifm_tile * 16 + filter_input_count)) * ofm_channels
-                        //                                     + (filter_input_ofm_tile * 16 + i);
-                        // filter_fifo_din[i] <= filter_data[addr];
-                        filter_fifo_din[i] <= filter_data[filter_input_ky][filter_input_kx][filter_input_ifm_tile * 16 + filter_input_count][filter_input_ofm_tile * 16 + i];
+                        input_fifo_din[i] <= ifm_data[addr][DATA_WIDTH*i +: DATA_WIDTH];
                     end
                 end
             end
@@ -380,19 +241,39 @@ module Layer #(
     logic [7:0] wait_count;
     logic [31:0] pe_cycle_count;
 
+    logic [3:0] pe_kx;
+    logic [3:0] pe_ky;
+    logic [3:0] pe_ifm_tile;
+    logic [3:0] pe_ofm_tile;
+
+    AGU pe_agu (
+        .clk(clk),
+        .rst_n(rst_n),
+        .next(wait_count >= 5 && pe_cycle_count < out_size * out_size),
+        .img_size(img_size),
+        .k_size(k_size),
+        .stride(stride),
+        .padding(padding),
+        .ifm_channels(ifm_channels),
+        .ofm_channels(ofm_channels),
+        .ix(),
+        .iy(),
+        .ox(),
+        .oy(),
+        .kx(pe_kx),
+        .ky(pe_ky),
+        .ifm_tile(pe_ifm_tile),
+        .ofm_tile(pe_ofm_tile),
+        .is_pad(),
+        .done()
+    );
+
     always_comb begin
         for (integer i = 0; i < 16; i++) begin
             if (wait_count == 5 && pe_cycle_count >= i && pe_cycle_count < out_size * out_size + i) begin
                 input_fifo_rd_en[i] = 1;
             end else begin
                 input_fifo_rd_en[i] = 0;
-            end
-        end
-        for (integer i = 0; i < 16; i++) begin
-            if (wait_count == 5 && pe_cycle_count < 16) begin
-                filter_fifo_rd_en[i] = 1;
-            end else begin
-                filter_fifo_rd_en[i] = 0;
             end
         end
     end
@@ -403,9 +284,9 @@ module Layer #(
             wait_count <= 0;
 
             // reset ofm_data, only for test
-            for (integer i = 0; i < 32768; i++) begin
-                ofm_data[i] <= 0;
-            end
+            // for (integer i = 0; i < 2048; i++) begin
+            //     ofm_data[i] <= 0;
+            // end
         end else begin
             if (wait_count < 5) begin
                 wait_count <= wait_count + 1;
@@ -419,8 +300,11 @@ module Layer #(
 
                 // load weights
                 if (pe_cycle_count < 16) begin
+                    automatic logic [15:0] addr = (pe_ky * k_size + pe_kx) * ifm_channels * (ofm_channels / 16)
+                                                        + (pe_ifm_tile * 16 + pe_cycle_count) * (ofm_channels / 16)
+                                                        + pe_ofm_tile;
                     for (integer oc = 0; oc < 16; oc++) begin
-                        weight_in[pe_cycle_count][oc] <= filter_fifo_dout[oc];
+                        weight_in[pe_cycle_count][oc] <= filter_data[addr][DATA_WIDTH*oc +: DATA_WIDTH];
                     end
                 end
 
@@ -473,11 +357,31 @@ module Layer #(
         .done(done)
     );
 
+    logic write_back;
+    logic [15:0] prev_addr;
+    logic signed [ACC_WIDTH-1:0]    prev_ofm_data [0:15];
+    logic signed [PE_ACC_WIDTH-1:0] prev_output   [0:15];
+
     always_ff @(posedge clk) begin
-        if (rst_n && output_fifo_can_read) begin
-            for (integer i = 0; i < 16; i++) begin
-                automatic logic [15:0] addr = (output_oy * out_size + output_ox) * ofm_channels + i + output_ofm_tile * 16;
-                ofm_data[addr] <= output_fifo_dout[i] + ofm_data[addr];
+        if (!rst_n) begin
+            write_back <= 0;
+        end else begin
+            if (output_fifo_can_read) begin
+                automatic logic [15:0] addr = (output_oy * out_size + output_ox) * (ofm_channels / 16) + output_ofm_tile;
+                for (integer i = 0; i < 16; i++) begin
+                    prev_ofm_data[i] <= ofm_data[addr][ACC_WIDTH*i +: ACC_WIDTH];
+                    prev_output[i]   <= output_fifo_dout[i];
+                end
+                prev_addr <= addr;
+                write_back <= 1;
+            end else begin
+                write_back <= 0;
+            end
+
+            if (write_back) begin
+                for (integer i = 0; i < 16; i++) begin
+                    ofm_data[prev_addr][ACC_WIDTH*i +: ACC_WIDTH] <= prev_ofm_data[i] + prev_output[i];
+                end
             end
         end
     end
