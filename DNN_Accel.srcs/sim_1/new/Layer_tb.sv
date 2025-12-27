@@ -29,7 +29,7 @@ module Layer_tb;
     logic signed [31:0] golden_mem [0:800-1];
     
     // DUT Instance
-    Layer uut (
+    Top uut (
         .clk(clk),
         .rst_n(rst_n),
         .img_size(img_size),
@@ -66,7 +66,7 @@ module Layer_tb;
                     for (l = 0; l < 16; l = l + 1) begin
                         tmp_ifm[l*DATA_WIDTH +: DATA_WIDTH] = ifm_mem[idx * 16 + l];
                     end
-                    uut.ifm_data[idx] = tmp_ifm;
+                    uut.ifm_bram_inst.xpm_memory_base_inst.mem[idx] = tmp_ifm;
                 end
             end
         end
@@ -79,10 +79,13 @@ module Layer_tb;
                         for (m = 0; m < 16; m = m + 1) begin
                             tmp_weight[m*DATA_WIDTH +: DATA_WIDTH] = wgt_mem[idx * 16 + m]; 
                         end
-                        uut.filter_data[idx] = tmp_weight;
+                        uut.weight_bram_inst.xpm_memory_base_inst.mem[idx] = tmp_weight;
                     end
                 end
             end
+        end
+        for (i = 0; i < 2048; i = i + 1) begin
+            uut.output_bram_inst.xpm_memory_base_inst.mem[i] = 0;
         end
         
         // 3. Reset Sequence
@@ -102,7 +105,7 @@ module Layer_tb;
                 for (k = 0; k < ofm_channels / 16; k = k + 1) begin
                     logic signed [ACC_WIDTH*16-1:0] dut_output;
                     idx = (i * out_size + j) * (ofm_channels / 16) + k;
-                    dut_output = uut.ofm_data[idx];
+                    dut_output = uut.output_bram_inst.xpm_memory_base_inst.mem[idx];
                     for (l = 0; l < 16; l = l + 1) begin
                         logic signed [ACC_WIDTH-1:0] dut_val;
                         dut_val = $signed(dut_output[l*ACC_WIDTH +: ACC_WIDTH]);
