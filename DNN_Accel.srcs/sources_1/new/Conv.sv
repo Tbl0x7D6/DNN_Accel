@@ -263,30 +263,8 @@ module Conv #(
     logic [3:0] pe_ifm_tile;
     logic [3:0] pe_ofm_tile;
 
-    localparam PE_WAIT_BEFORE_START = 7;
-    localparam PE_WAIT_BEFORE_SWITCH_KERNEL = 5;
-
-    AGU pe_agu (
-        .clk(clk),
-        .rst_n(rst_n),
-        .next(wait_count >= PE_WAIT_BEFORE_START && pe_cycle_count < out_size * out_size),
-        .img_size(img_size),
-        .k_size(k_size),
-        .stride(stride),
-        .padding(padding),
-        .ifm_channels(ifm_channels),
-        .ofm_channels(ofm_channels),
-        .ix(),
-        .iy(),
-        .ox(),
-        .oy(),
-        .kx(pe_kx),
-        .ky(pe_ky),
-        .ifm_tile(pe_ifm_tile),
-        .ofm_tile(pe_ofm_tile),
-        .is_pad(),
-        .done()
-    );
+    localparam PE_WAIT_BEFORE_START = 6;
+    localparam PE_WAIT_BEFORE_SWITCH_KERNEL = 3;
 
     always_comb begin
         for (integer i = 0; i < 16; i++) begin
@@ -314,6 +292,7 @@ module Conv #(
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
+            {pe_kx, pe_ky, pe_ifm_tile, pe_ofm_tile} <= 0;
             pe_cycle_count <= 0;
             wait_count <= 0;
         end else begin
@@ -323,8 +302,25 @@ module Conv #(
                 pe_cycle_count <= pe_cycle_count + 1;
 
                 // switch to next kernel position
-                if (pe_cycle_count >= out_size * out_size + 16 + 16 + PE_WAIT_BEFORE_SWITCH_KERNEL) begin
+                if (pe_cycle_count == out_size * out_size + 16 + 16 + PE_WAIT_BEFORE_SWITCH_KERNEL) begin
                     pe_cycle_count <= 0;
+                end else if (pe_cycle_count == out_size * out_size + 16 + 16 + PE_WAIT_BEFORE_SWITCH_KERNEL - 1) begin
+                    pe_kx <= pe_kx + 1;
+                    if (pe_kx == k_size - 1) begin
+                        pe_kx <= 0;
+                        pe_ky <= pe_ky + 1;
+                        if (pe_ky == k_size - 1) begin
+                            pe_ky <= 0;
+                            pe_ifm_tile <= pe_ifm_tile + 1;
+                            if (pe_ifm_tile == (ifm_channels / 16) - 1) begin
+                                pe_ifm_tile <= 0;
+                                pe_ofm_tile <= pe_ofm_tile + 1;
+                                if (pe_ofm_tile == (ofm_channels / 16) - 1) begin
+                                    pe_ofm_tile <= 0;
+                                end
+                            end
+                        end
+                    end
                 end
 
                 // load weights
