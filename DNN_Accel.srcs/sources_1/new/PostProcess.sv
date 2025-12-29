@@ -10,6 +10,7 @@ module PostProcess #(
     input logic [7:0] out_size,
     input logic [7:0] ofm_channels,
 
+    input logic ReLU,
     input logic [7:0] Q,
 
     input  logic [ACC_WIDTH *16-1:0] input_rd_data,
@@ -28,14 +29,16 @@ module PostProcess #(
     function automatic [DATA_WIDTH-1:0] quantize_relu;
         input logic signed [ACC_WIDTH-1:0] in;
         logic signed [ACC_WIDTH-1:0] scaled;
+        localparam MAX_VAL = 2**(DATA_WIDTH - 1) - 1;
 
         begin
             scaled = in >>> Q;
-
-            if (scaled < 0) begin
+            if (scaled < 0 && ReLU) begin
                 quantize_relu = 0;
-            end else if (scaled > (2**(DATA_WIDTH - 1) - 1)) begin
-                quantize_relu = 2**(DATA_WIDTH - 1) - 1;
+            end else if (scaled > MAX_VAL) begin
+                quantize_relu = MAX_VAL;
+            end else if (scaled < -MAX_VAL) begin
+                quantize_relu = -MAX_VAL;
             end else begin
                 quantize_relu = scaled[DATA_WIDTH-1:0];
             end

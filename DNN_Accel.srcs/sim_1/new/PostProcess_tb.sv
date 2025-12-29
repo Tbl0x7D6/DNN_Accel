@@ -14,6 +14,7 @@ module PostProcess_tb;
         .rst_n(rst_n),
         .out_size(uut.out_size),
         .ofm_channels(uut.ofm_channels),
+        .ReLU(1),
         .Q(Q),
 
         .input_rd_data(uut.ofm_rd_data),
