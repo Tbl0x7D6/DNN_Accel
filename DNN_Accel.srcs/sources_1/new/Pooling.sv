@@ -67,6 +67,8 @@ module Pooling #(
     logic [15:0] prev_output_addr_1;
     logic [15:0] prev_output_addr_2;
 
+    logic is_first_read;
+
     always_comb begin
         ifm_addr    = (iy * img_size + ix) * (ifm_channels / 16) + tile;
         ofm_rd_addr = (oy * out_size + ox) * (ifm_channels / 16) + tile;
@@ -89,6 +91,17 @@ module Pooling #(
                 logic signed [ACC_WIDTH-1:0] b;
 
                 a = $signed(ofm_rd_data[ACC_WIDTH*i +: ACC_WIDTH]);
+
+                // data forwarding
+                if (out_size == 1) begin
+                    if (is_first_read) begin
+                        a = 0;
+                    end else begin
+                        a = $signed(ofm_wr_data[ACC_WIDTH*i +: ACC_WIDTH]);
+                    end
+                end
+                is_first_read <= (ix == 0 && iy == 0);
+
                 b = $signed(ifm_data[DATA_WIDTH*i +: DATA_WIDTH]);
 
                 if (pooling_type == 0) begin
