@@ -37,11 +37,11 @@ unisims
 *.lib
 
 ## dirs
-vivado.cache/
-vivado.hw/
-vivado.ip_user_files/
-vivado.runs/
-vivado.sim/
+DNN_Accel.cache/
+DNN_Accel.hw/
+DNN_Accel.ip_user_files/
+DNN_Accel.runs/
+DNN_Accel.sim/
 
 ###### for Xilinx Vivado|ISE
 .Xil/

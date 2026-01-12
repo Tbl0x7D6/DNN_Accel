@@ -1,15 +1,15 @@
 `timescale 1ns / 1ps
 
-module Top #(
-    parameter DATA_WIDTH = 8,
-    parameter ACC_WIDTH = 26,
-    parameter PE_ACC_WIDTH = 21
-)(
+module Top (
     input logic clk,
     input logic rst_n,
-    input logic [63:0] instruction,
+    input logic start,
     output logic done
 );
+
+    parameter DATA_WIDTH = 8;
+    parameter ACC_WIDTH = 26;
+    parameter PE_ACC_WIDTH = 21;
 
     logic [DATA_WIDTH*16-1:0] ifm_rd_data;
     logic [DATA_WIDTH*16-1:0] ifm_wr_data;
@@ -26,7 +26,9 @@ module Top #(
     logic                     ofm_wr_en;
 
 
-    // logic [63:0] instruction;
+    logic [63:0] instruction;
+    logic exec_rst_n;
+    logic exec_done;
 
     Executor #(
         .DATA_WIDTH(DATA_WIDTH),
@@ -34,7 +36,7 @@ module Top #(
         .PE_ACC_WIDTH(PE_ACC_WIDTH)
     ) executor_inst (
         .clk(clk),
-        .rst_n(rst_n),
+        .rst_n(exec_rst_n),
         .instruction(instruction),
         .ifm_rd_data(ifm_rd_data),
         .ifm_wr_data(ifm_wr_data),
@@ -47,20 +49,24 @@ module Top #(
         .ofm_rd_addr(ofm_rd_addr),
         .ofm_wr_addr(ofm_wr_addr),
         .ofm_wr_en(ofm_wr_en),
-        .done(done)
+        .done(exec_done)
     );
 
 
-    xpm_memory_spram # (
+    xpm_memory_tdpram # (
 
         // Common module parameters
         .MEMORY_SIZE             (DATA_WIDTH*16*2048),            //positive integer
         .MEMORY_PRIMITIVE        ("auto"),          //string; "auto", "distributed", "block" or "ultra";
+        .CLOCKING_MODE           ("common_clock"),  //string; "common_clock", "independent_clock" 
         .MEMORY_INIT_FILE        ("none"),          //string; "none" or "<filename>.mem" 
         .MEMORY_INIT_PARAM       (""    ),          //string;
-        .USE_MEM_INIT            (0),               //integer; 0,1
+        .USE_MEM_INIT            (1),               //integer; 0,1
         .WAKEUP_TIME             ("disable_sleep"), //string; "disable_sleep" or "use_sleep_pin" 
         .MESSAGE_CONTROL         (0),               //integer; 0,1
+        .ECC_MODE                ("no_ecc"),        //string; "no_ecc", "encode_only", "decode_only" or "both_encode_and_decode" 
+        .AUTO_SLEEP_TIME         (0),               //Do not Change
+        .USE_EMBEDDED_CONSTRAINT (0),               //integer: 0,1
         .MEMORY_OPTIMIZATION     ("true"),          //string; "true", "false" 
 
         // Port A module parameters
@@ -69,10 +75,17 @@ module Top #(
         .BYTE_WRITE_WIDTH_A      (DATA_WIDTH*16),              //integer; 8, 9, or WRITE_DATA_WIDTH_A value
         .ADDR_WIDTH_A            (11),               //positive integer
         .READ_RESET_VALUE_A      ("0"),             //string
-        .ECC_MODE                ("no_ecc"),        //string; "no_ecc", "encode_only", "decode_only" or "both_encode_and_decode" 
-        .AUTO_SLEEP_TIME         (0),               //Do not Change
         .READ_LATENCY_A          (1),               //non-negative integer
-        .WRITE_MODE_A            ("read_first")     //string; "write_first", "read_first", "no_change" 
+        .WRITE_MODE_A            ("read_first"),     //string; "write_first", "read_first", "no_change" 
+
+        // Port B module parameters
+        .WRITE_DATA_WIDTH_B      (128),              //positive integer
+        .READ_DATA_WIDTH_B       (128),              //positive integer
+        .BYTE_WRITE_WIDTH_B      (128),              //integer; 8, 9, or WRITE_DATA_WIDTH_B value
+        .ADDR_WIDTH_B            (11),               //positive integer
+        .READ_RESET_VALUE_B      ("0"),             //vector of READ_DATA_WIDTH_B bits
+        .READ_LATENCY_B          (1),               //non-negative integer
+        .WRITE_MODE_B            ("no_change")      //string; "write_first", "read_first", "no_change" 
 
     ) ifm_bram_inst (
 
@@ -91,21 +104,39 @@ module Top #(
         .injectdbiterra          (1'b0),
         .douta                   (ifm_rd_data),
         .sbiterra                (),
-        .dbiterra                ()
+        .dbiterra                (),
+
+        // Port B module ports
+        .clkb                    (clk),
+        .rstb                    (~rst_n),
+        .enb                     (1),
+        .regceb                  (),
+        .web                     (),
+        .addrb                   (),
+        .dinb                    (),
+        .injectsbiterrb          (1'b0),
+        .injectdbiterrb          (1'b0),
+        .doutb                   (),
+        .sbiterrb                (),
+        .dbiterrb                ()
 
     );
 
 
-    xpm_memory_spram # (
+    xpm_memory_tdpram # (
 
         // Common module parameters
         .MEMORY_SIZE             (DATA_WIDTH*16*16384),            //positive integer
         .MEMORY_PRIMITIVE        ("auto"),          //string; "auto", "distributed", "block" or "ultra";
+        .CLOCKING_MODE           ("common_clock"),  //string; "common_clock", "independent_clock" 
         .MEMORY_INIT_FILE        ("none"),          //string; "none" or "<filename>.mem" 
         .MEMORY_INIT_PARAM       (""    ),          //string;
-        .USE_MEM_INIT            (0),               //integer; 0,1
+        .USE_MEM_INIT            (1),               //integer; 0,1
         .WAKEUP_TIME             ("disable_sleep"), //string; "disable_sleep" or "use_sleep_pin" 
         .MESSAGE_CONTROL         (0),               //integer; 0,1
+        .ECC_MODE                ("no_ecc"),        //string; "no_ecc", "encode_only", "decode_only" or "both_encode_and_decode" 
+        .AUTO_SLEEP_TIME         (0),               //Do not Change
+        .USE_EMBEDDED_CONSTRAINT (0),               //integer: 0,1
         .MEMORY_OPTIMIZATION     ("true"),          //string; "true", "false" 
 
         // Port A module parameters
@@ -114,10 +145,17 @@ module Top #(
         .BYTE_WRITE_WIDTH_A      (DATA_WIDTH*16),              //integer; 8, 9, or WRITE_DATA_WIDTH_A value
         .ADDR_WIDTH_A            (14),               //positive integer
         .READ_RESET_VALUE_A      ("0"),             //string
-        .ECC_MODE                ("no_ecc"),        //string; "no_ecc", "encode_only", "decode_only" or "both_encode_and_decode" 
-        .AUTO_SLEEP_TIME         (0),               //Do not Change
         .READ_LATENCY_A          (1),               //non-negative integer
-        .WRITE_MODE_A            ("read_first")     //string; "write_first", "read_first", "no_change" 
+        .WRITE_MODE_A            ("read_first"),     //string; "write_first", "read_first", "no_change" 
+
+        // Port B module parameters
+        .WRITE_DATA_WIDTH_B      (128),              //positive integer
+        .READ_DATA_WIDTH_B       (128),              //positive integer
+        .BYTE_WRITE_WIDTH_B      (128),              //integer; 8, 9, or WRITE_DATA_WIDTH_B value
+        .ADDR_WIDTH_B            (14),               //positive integer
+        .READ_RESET_VALUE_B      ("0"),             //vector of READ_DATA_WIDTH_B bits
+        .READ_LATENCY_B          (1),               //non-negative integer
+        .WRITE_MODE_B            ("no_change")      //string; "write_first", "read_first", "no_change" 
 
     ) weight_bram_inst (
 
@@ -136,7 +174,21 @@ module Top #(
         .injectdbiterra          (1'b0),
         .douta                   (filter_data),
         .sbiterra                (),
-        .dbiterra                ()
+        .dbiterra                (),
+
+        // Port B module ports
+        .clkb                    (clk),
+        .rstb                    (~rst_n),
+        .enb                     (1),
+        .regceb                  (),
+        .web                     (),
+        .addrb                   (),
+        .dinb                    (),
+        .injectsbiterrb          (1'b0),
+        .injectdbiterrb          (1'b0),
+        .doutb                   (),
+        .sbiterrb                (),
+        .dbiterrb                ()
 
     );
 
@@ -148,7 +200,7 @@ module Top #(
         .CLOCKING_MODE           ("common_clock"),  //string; "common_clock", "independent_clock" 
         .MEMORY_INIT_FILE        ("none"),          //string; "none" or "<filename>.mem" 
         .MEMORY_INIT_PARAM       (""    ),          //string;
-        .USE_MEM_INIT            (0),               //integer; 0,1
+        .USE_MEM_INIT            (1),               //integer; 0,1
         .WAKEUP_TIME             ("disable_sleep"), //string; "disable_sleep" or "use_sleep_pin" 
         .MESSAGE_CONTROL         (0),               //integer; 0,1
         .ECC_MODE                ("no_ecc"),        //string; "no_ecc", "encode_only", "decode_only" or "both_encode_and_decode" 
@@ -193,5 +245,89 @@ module Top #(
         .dbiterrb                ()
 
     );
+
+    logic [3:0] pc;
+
+    xpm_memory_sdpram # (
+
+        // Common module parameters
+        .MEMORY_SIZE             (64*16),            //positive integer
+        .MEMORY_PRIMITIVE        ("auto"),          //string; "auto", "distributed", "block" or "ultra";
+        .CLOCKING_MODE           ("independent_clock"),  //string; "common_clock", "independent_clock" 
+        .MEMORY_INIT_FILE        ("none"),          //string; "none" or "<filename>.mem" 
+        .MEMORY_INIT_PARAM       (""    ),          //string;
+        .USE_MEM_INIT            (1),               //integer; 0,1
+        .WAKEUP_TIME             ("disable_sleep"), //string; "disable_sleep" or "use_sleep_pin" 
+        .MESSAGE_CONTROL         (0),               //integer; 0,1
+        .ECC_MODE                ("no_ecc"),        //string; "no_ecc", "encode_only", "decode_only" or "both_encode_and_decode" 
+        .AUTO_SLEEP_TIME         (0),               //Do not Change
+        .USE_EMBEDDED_CONSTRAINT (0),               //integer: 0,1
+        .MEMORY_OPTIMIZATION     ("true"),          //string; "true", "false" 
+
+        // Port A module parameters
+        .WRITE_DATA_WIDTH_A      (64),              //positive integer
+        .BYTE_WRITE_WIDTH_A      (64),              //integer; 8, 9, or WRITE_DATA_WIDTH_A value
+        .ADDR_WIDTH_A            (4),               //positive integer
+
+        // Port B module parameters
+        .READ_DATA_WIDTH_B       (64),              //positive integer
+        .ADDR_WIDTH_B            (4),               //positive integer
+        .READ_RESET_VALUE_B      ("0"),             //string
+        .READ_LATENCY_B          (1),               //non-negative integer
+        .WRITE_MODE_B            ("read_first")      //string; "write_first", "read_first", "no_change" 
+
+    ) instruction_bram_inst (
+
+        // Common module ports
+        .sleep                   (1'b0),
+
+        // Port A module ports
+        .clka                    (clk),
+        .ena                     (1),
+        .wea                     (0),
+        .addra                   (),
+        .dina                    (),
+        .injectsbiterra          (1'b0),
+        .injectdbiterra          (1'b0),
+
+        // Port B module ports
+        .clkb                    (clk),
+        .rstb                    (~rst_n),
+        .enb                     (1),
+        .regceb                  (),
+        .addrb                   (pc),
+        .doutb                   (instruction),
+        .sbiterrb                (),
+        .dbiterrb                ()
+
+    );
+
+
+    logic prev_start;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            pc <= 0;
+            done <= 0;
+            exec_rst_n <= 0;
+            prev_start <= 0;
+        end else if (!done) begin
+            prev_start <= start;
+            if (start && !prev_start) begin
+                pc <= 0;
+                exec_rst_n <= 0;
+            end else if (exec_done && exec_rst_n) begin
+                pc <= pc + 1;
+                exec_rst_n <= 0;
+            end else begin
+                exec_rst_n <= 1;
+            end
+
+            if (instruction[63] == 1) begin
+                done <= 1;
+                exec_rst_n <= 0;
+            end
+        end
+    end
 
 endmodule
