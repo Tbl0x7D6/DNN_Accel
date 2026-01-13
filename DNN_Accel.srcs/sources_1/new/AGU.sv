@@ -33,10 +33,13 @@ module AGU(
     logic [7:0] out_size;
     logic [3:0] ifm_channel_tiles;
     logic [3:0] ofm_channel_tiles;
-    always_comb begin
-        out_size = ((img_size + 2 * padding - k_size) / stride) + 1;
-        ifm_channel_tiles = (ifm_channels + 15) / 16;
-        ofm_channel_tiles = (ofm_channels + 15) / 16;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            out_size <= ((img_size + 2 * padding - k_size) / stride) + 1;
+            ifm_channel_tiles <= (ifm_channels + 15) >> 4;
+            ofm_channel_tiles <= (ofm_channels + 15) >> 4;
+        end
     end
 
     always_comb begin

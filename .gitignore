@@ -43,6 +43,32 @@ DNN_Accel.ip_user_files/
 DNN_Accel.runs/
 DNN_Accel.sim/
 
+## SDK files
+DNN_Accel.sdk/.metadata/
+DNN_Accel.sdk/.sdk/
+DNN_Accel.sdk/RemoteSystemsTempFiles/
+DNN_Accel.sdk/SDK.log
+DNN_Accel.sdk/**/Debug/
+DNN_Accel.sdk/**/Release/
+DNN_Accel.sdk/**/.cproject
+DNN_Accel.sdk/**/.project
+DNN_Accel.sdk/**/.settings/
+
+## BSP compiled objects and libraries
+DNN_Accel.sdk/**_bsp/**/libsrc/**/*.o
+DNN_Accel.sdk/**_bsp/**/lib/*.a
+DNN_Accel.sdk/**_bsp/ps7_cortexa9_0/include/
+DNN_Accel.sdk/**_bsp/ps7_cortexa9_0/libsrc/*/src/*.o
+
+## BD auto-generated files
+DNN_Accel.srcs/sources_1/bd/*/hdl/
+DNN_Accel.srcs/sources_1/bd/*/sim/
+DNN_Accel.srcs/sources_1/bd/*/synth/
+DNN_Accel.srcs/sources_1/bd/*/hw_handoff/
+DNN_Accel.srcs/sources_1/bd/*/ip/
+DNN_Accel.srcs/sources_1/bd/*/ui/
+DNN_Accel.srcs/sources_1/bd/*/*.bxml
+
 ###### for Xilinx Vivado|ISE
 .Xil/
 .cache/

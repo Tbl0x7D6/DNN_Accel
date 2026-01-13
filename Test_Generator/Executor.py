@@ -266,7 +266,7 @@ def write_weights_to_file():
 
 def generate_input_image():
     """生成随机输入图像 (16, 32, 32)，第一个channel有数据，其余15个channel填充0"""
-    np.random.seed(114514)
+    np.random.seed(int(input("Enter a seed for random input image generation: ")))
     ifm = np.zeros((16, 32, 32), dtype=np.int8)
     # 只有第一个channel有随机数据
     ifm[0] = np.random.randint(-50, 50, size=(32, 32)).astype(np.int8)
@@ -277,6 +277,11 @@ def generate_input_image():
     
     os.makedirs('Test_Generator/data', exist_ok=True)
     np.savetxt('Test_Generator/data/ifm.txt', ifm_u8, fmt='%02x')
+    
+    # 保存原始图片，只有第一个channel，格式为(H, W)，没有C
+    # 只有第一个channel有数据，所以直接保存ifm[0]
+    ifm_original = ifm[0].astype(np.uint8)
+    np.savetxt('Test_Generator/data/ifm_original.txt', ifm_original.flatten(), fmt='%02x')
     
     return ifm
 

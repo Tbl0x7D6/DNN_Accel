@@ -80,6 +80,9 @@ module Top_tb;
         #200;
         start = 1;
         wait(done);
+        #10;
+        start = 0;
+        #200;
 
         $display("Simulation Finished.");
 
