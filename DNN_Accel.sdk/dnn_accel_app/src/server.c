@@ -43,7 +43,7 @@ void server()
         socklen_t len = sizeof(cliaddr);
 
         packet_t buf;
-        u8_t output[OUTPUT_BUFFER_SIZE];
+        u32_t output[OUTPUT_BUFFER_SIZE];
 
         int n = lwip_recvfrom(sock, &buf, sizeof(packet_t),
                             0, (struct sockaddr *) &cliaddr, &len);
@@ -55,8 +55,11 @@ void server()
         printf("[server] Received request of %d bytes\n", n);
         app(&buf, output);
 
-        lwip_sendto(sock, (const char *) &(buf.inst), sizeof(buf.inst),
+        // TODO: only for test
+        lwip_sendto(sock, (const char *)output, 10,
                     0, (const struct sockaddr *) &cliaddr, len);
+        // lwip_sendto(sock, (const char *) &(buf.inst), sizeof(buf.inst),
+        //             0, (const struct sockaddr *) &cliaddr, len);
     }
 
     lwip_close(sock);

@@ -69,6 +69,7 @@ void app(const packet_t *buf, void *output) {
         // TODO: only for test
         for (i = 0; i < 4; i++) {
             u32_t word = XBram_ReadReg(IFM_Bram.Config.MemBaseAddress, i << 2);
+            ((u32_t *)output)[i] = word;
             printf("[app] Output word %d: 0x%08X\n", i, word);
         }
 
