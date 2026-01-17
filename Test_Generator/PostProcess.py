@@ -12,7 +12,7 @@ Q = input("Enter quantization factor (e.g., 9): ")
 with open('Test_Generator/data/config.txt', 'r') as f:
     config = f.readline().strip().split()
     img_size = int(config[2])
-    oc = int(config[3])
+    oc = int(config[3]) * 16
 
 with open('Test_Generator/data/config.txt', 'a') as f:
     f.write(f'{Q}\n')

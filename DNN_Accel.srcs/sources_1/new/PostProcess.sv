@@ -8,7 +8,7 @@ module PostProcess #(
     input logic rst_n,
 
     input logic [7:0] out_size,
-    input logic [7:0] ofm_channels,
+    input logic [3:0] ofm_channel_tiles,
 
     input logic ReLU,
     input logic [7:0] Q,
@@ -58,7 +58,7 @@ module PostProcess #(
     logic write_back_2;
 
     always_comb begin
-        addr = (oy * out_size + ox) * ((ofm_channels + 15) / 16) + tile;
+        addr = (oy * out_size + ox) * ofm_channel_tiles + tile;
 
         input_rd_addr = addr;
         output_en = write_back_2;
@@ -92,7 +92,7 @@ module PostProcess #(
                 if (oy == out_size - 1) begin
                     oy <= 0;
                     tile <= tile + 1;
-                    if (tile == ((ofm_channels + 15) / 16) - 1) begin
+                    if (tile == ofm_channel_tiles - 1) begin
                         tile <= 0;
                         done <= 1;
                     end

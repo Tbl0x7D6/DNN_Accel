@@ -35,8 +35,9 @@ module Executor #(
     logic [3:0]    k_size;
     logic [1:0]    stride;
     logic [1:0]    padding;
-    logic [7:0]    ifm_channels;
-    logic [7:0]    ofm_channels;
+    logic [7:0]    out_size;
+    logic [3:0]    ifm_channel_tiles;
+    logic [3:0]    ofm_channel_tiles;
 
     always_comb begin
         opcode            = instruction[63:60];
@@ -47,13 +48,9 @@ module Executor #(
         k_size            = instruction[23:20];
         stride            = instruction[19:18];
         padding           = instruction[17:16];
-        ifm_channels      = instruction[15:8];
-        ofm_channels      = instruction[7:0];
-    end
-
-    logic [7:0] out_size;
-    always_comb begin
-        out_size = ((img_size + 2 * padding - k_size) / stride) + 1;
+        out_size          = instruction[15:8];
+        ifm_channel_tiles = instruction[7:4];
+        ofm_channel_tiles = instruction[3:0];
     end
 
 
@@ -88,8 +85,9 @@ module Executor #(
         .k_size(k_size),
         .stride(stride),
         .padding(padding),
-        .ifm_channels(ifm_channels),
-        .ofm_channels(ofm_channels),
+        .out_size(out_size),
+        .ifm_channel_tiles(ifm_channel_tiles),
+        .ofm_channel_tiles(ofm_channel_tiles),
         .ifm_data(ifm_rd_data),
         .ifm_addr(conv_ifm_addr),
         .filter_data(filter_data),
@@ -119,7 +117,8 @@ module Executor #(
         .img_size(img_size),
         .k_size(k_size),
         .stride(stride),
-        .ifm_channels(ifm_channels),
+        .out_size(out_size),
+        .ifm_channel_tiles(ifm_channel_tiles),
         .ifm_data(ifm_rd_data),
         .ifm_addr(pooling_ifm_addr),
         .ofm_rd_data(ofm_rd_data),
@@ -145,7 +144,7 @@ module Executor #(
         .clk(clk),
         .rst_n(postprocess_enable),
         .out_size(out_size),
-        .ofm_channels(ofm_channels),
+        .ofm_channel_tiles(ofm_channel_tiles),
         .ReLU(ReLU),
         .Q(Q),
         .input_rd_data(ofm_rd_data),

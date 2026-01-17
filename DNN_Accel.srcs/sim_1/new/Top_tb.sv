@@ -24,8 +24,8 @@ module Top_tb;
 
     logic [7:0] img_size;
     logic [7:0] out_size;
-    logic [7:0] ifm_channels;
-    logic [7:0] ofm_channels;
+    logic [3:0] ifm_channel_tiles;
+    logic [3:0] ofm_channel_tiles;
 
     initial begin
         clk = 0;
@@ -41,13 +41,13 @@ module Top_tb;
         $readmemh("c:/Users/be/Desktop/DNN_Accel/Test_Generator/data/golden_5.txt", golden_mem);
 
         img_size = 32;
-        ifm_channels = 16;
+        ifm_channel_tiles = 1;
 
         for (i = 0; i < img_size; i = i + 1) begin
             for (j = 0; j < img_size; j = j + 1) begin
-                for (k = 0; k < ifm_channels / 16; k = k + 1) begin
+                for (k = 0; k < ifm_channel_tiles; k = k + 1) begin
                     logic [DATA_WIDTH*16-1:0] tmp_ifm;
-                    idx = (i * img_size + j) * (ifm_channels / 16) + k;
+                    idx = (i * img_size + j) * ifm_channel_tiles + k;
                     for (l = 0; l < 16; l = l + 1) begin
                         tmp_ifm[l*DATA_WIDTH +: DATA_WIDTH] = ifm_mem[idx * 16 + l];
                     end
@@ -63,13 +63,13 @@ module Top_tb;
             dut.weight_bram_inst.xpm_memory_base_inst.mem[i] = tmp_weight;
         end
 
-        dut.instruction_bram_inst.xpm_memory_base_inst.mem[0] = 64'h0109000020561020;
-        dut.instruction_bram_inst.xpm_memory_base_inst.mem[1] = 64'h1000000020282020;
-        dut.instruction_bram_inst.xpm_memory_base_inst.mem[2] = 64'h0108032010352040;
-        dut.instruction_bram_inst.xpm_memory_base_inst.mem[3] = 64'h010807A010394040;
-        dut.instruction_bram_inst.xpm_memory_base_inst.mem[4] = 64'h010810A008394080;
-        dut.instruction_bram_inst.xpm_memory_base_inst.mem[5] = 64'h3004000004448080;
-        dut.instruction_bram_inst.xpm_memory_base_inst.mem[6] = 64'h000622A001148010;
+        dut.instruction_bram_inst.xpm_memory_base_inst.mem[0] = 64'h0109000020562012;
+        dut.instruction_bram_inst.xpm_memory_base_inst.mem[1] = 64'h1000000020281022;
+        dut.instruction_bram_inst.xpm_memory_base_inst.mem[2] = 64'h0108032010351024;
+        dut.instruction_bram_inst.xpm_memory_base_inst.mem[3] = 64'h010807A010390844;
+        dut.instruction_bram_inst.xpm_memory_base_inst.mem[4] = 64'h010810A008390448;
+        dut.instruction_bram_inst.xpm_memory_base_inst.mem[5] = 64'h3004000004440188;
+        dut.instruction_bram_inst.xpm_memory_base_inst.mem[6] = 64'h000622A001140181;
         dut.instruction_bram_inst.xpm_memory_base_inst.mem[7] = 64'hFFFFFFFFFFFFFFFF;
 
 
@@ -87,13 +87,13 @@ module Top_tb;
         $display("Simulation Finished.");
 
         out_size = 1;
-        ofm_channels = 16;
+        ofm_channel_tiles = 1;
 
         for (i = 0; i < out_size; i = i + 1) begin
             for (j = 0; j < out_size; j = j + 1) begin
-                for (k = 0; k < ofm_channels / 16; k = k + 1) begin
+                for (k = 0; k < ofm_channel_tiles; k = k + 1) begin
                     logic signed [127:0] dut_output;
-                    idx = (i * out_size + j) * (ofm_channels / 16) + k;
+                    idx = (i * out_size + j) * ofm_channel_tiles + k;
                     dut_output = dut.ifm_bram_inst.xpm_memory_base_inst.mem[idx];
                     for (l = 0; l < 16; l = l + 1) begin
                         logic signed [7:0] dut_val;

@@ -10,9 +10,10 @@ module AGU(
     input logic [3:0] k_size,
     input logic [1:0] stride,
     input logic [1:0] padding,
+    input logic [7:0] out_size,
 
-    input logic [7:0] ifm_channels,
-    input logic [7:0] ofm_channels,
+    input logic [3:0] ifm_channel_tiles,
+    input logic [3:0] ofm_channel_tiles,
 
     output logic signed [7:0] ix,
     output logic signed [7:0] iy,
@@ -29,18 +30,6 @@ module AGU(
 );
 
     logic [31:0] count;
-
-    logic [7:0] out_size;
-    logic [3:0] ifm_channel_tiles;
-    logic [3:0] ofm_channel_tiles;
-
-    always_ff @(posedge clk) begin
-        if (!rst_n) begin
-            out_size <= ((img_size + 2 * padding - k_size) / stride) + 1;
-            ifm_channel_tiles <= (ifm_channels + 15) >> 4;
-            ofm_channel_tiles <= (ofm_channels + 15) >> 4;
-        end
-    end
 
     always_comb begin
         ix = ox * stride + kx - padding;

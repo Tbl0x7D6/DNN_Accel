@@ -12,9 +12,10 @@ module Conv #(
     input logic [3:0] k_size,
     input logic [1:0] stride,
     input logic [1:0] padding,
+    input logic [7:0] out_size,
 
-    input logic [7:0] ifm_channels,
-    input logic [7:0] ofm_channels,
+    input logic [3:0] ifm_channel_tiles,
+    input logic [3:0] ofm_channel_tiles,
 
     input  logic [DATA_WIDTH*16-1:0] ifm_data,
     output logic [15:0]              ifm_addr,
@@ -189,11 +190,6 @@ module Conv #(
         end
     endgenerate
 
-    logic [7:0] out_size;
-    always_comb begin
-        out_size = ((img_size + 2 * padding - k_size) / stride) + 1;
-    end
-
 
     logic       input_is_pad;
     logic       input_done;
@@ -209,8 +205,9 @@ module Conv #(
         .k_size(k_size),
         .stride(stride),
         .padding(padding),
-        .ifm_channels(ifm_channels),
-        .ofm_channels(ofm_channels),
+        .out_size(out_size),
+        .ifm_channel_tiles(ifm_channel_tiles),
+        .ofm_channel_tiles(ofm_channel_tiles),
         .ix(input_ix),
         .iy(input_iy),
         .ox(),
@@ -227,7 +224,7 @@ module Conv #(
     logic prev_input_is_pad;
 
     always_comb begin
-        ifm_addr = (input_iy * img_size + input_ix) * (ifm_channels / 16) + input_ifm_tile;
+        ifm_addr = (input_iy * img_size + input_ix) * ifm_channel_tiles + input_ifm_tile;
     end
 
     always_ff @(posedge clk) begin
@@ -285,8 +282,8 @@ module Conv #(
         end else begin
             row = pe_cycle_count + 1;
         end
-        filter_addr = (pe_ky * k_size + pe_kx) * ifm_channels * (ofm_channels / 16)
-                            + (pe_ifm_tile * 16 + row) * (ofm_channels / 16)
+        filter_addr = (pe_ky * k_size + pe_kx) * ifm_channel_tiles * ofm_channel_tiles * 16
+                            + (pe_ifm_tile * 16 + row) * ofm_channel_tiles
                             + pe_ofm_tile;
     end
 
@@ -312,10 +309,10 @@ module Conv #(
                         if (pe_ky == k_size - 1) begin
                             pe_ky <= 0;
                             pe_ifm_tile <= pe_ifm_tile + 1;
-                            if (pe_ifm_tile == (ifm_channels / 16) - 1) begin
+                            if (pe_ifm_tile == ifm_channel_tiles - 1) begin
                                 pe_ifm_tile <= 0;
                                 pe_ofm_tile <= pe_ofm_tile + 1;
-                                if (pe_ofm_tile == (ofm_channels / 16) - 1) begin
+                                if (pe_ofm_tile == ofm_channel_tiles - 1) begin
                                     pe_ofm_tile <= 0;
                                 end
                             end
@@ -365,8 +362,9 @@ module Conv #(
         .k_size(k_size),
         .stride(stride),
         .padding(padding),
-        .ifm_channels(ifm_channels),
-        .ofm_channels(ofm_channels),
+        .out_size(out_size),
+        .ifm_channel_tiles(ifm_channel_tiles),
+        .ofm_channel_tiles(ofm_channel_tiles),
         .ix(),
         .iy(),
         .ox(output_ox),
@@ -387,7 +385,7 @@ module Conv #(
     logic signed [PE_ACC_WIDTH-1:0] prev_output   [0:15];
 
     always_comb begin
-        ofm_rd_addr = (output_oy * out_size + output_ox) * (ofm_channels / 16) + output_ofm_tile;
+        ofm_rd_addr = (output_oy * out_size + output_ox) * ofm_channel_tiles + output_ofm_tile;
         ofm_wr_addr = prev_output_addr_2;
         ofm_wr_en   = write_back_2;
     end
@@ -399,7 +397,7 @@ module Conv #(
         end else begin
             write_back_1 <= output_fifo_can_read;
             write_back_2 <= write_back_1;
-            prev_output_addr_1 <= (output_oy * out_size + output_ox) * (ofm_channels / 16) + output_ofm_tile;
+            prev_output_addr_1 <= (output_oy * out_size + output_ox) * ofm_channel_tiles + output_ofm_tile;
             prev_output_addr_2 <= prev_output_addr_1;
 
             for (integer i = 0; i < 16; i++) begin

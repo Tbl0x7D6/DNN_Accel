@@ -200,8 +200,8 @@ module Executor_tb;
 
     logic [7:0] img_size;
     logic [7:0] out_size;
-    logic [7:0] ifm_channels;
-    logic [7:0] ofm_channels;
+    logic [3:0] ifm_channel_tiles;
+    logic [3:0] ofm_channel_tiles;
 
     initial begin
         clk = 0;
@@ -217,13 +217,13 @@ module Executor_tb;
         $readmemh("c:/Users/be/Desktop/DNN_Accel/Test_Generator/data/golden_5.txt", golden_mem);
 
         img_size = 32;
-        ifm_channels = 16;
+        ifm_channel_tiles = 1;
 
         for (i = 0; i < img_size; i = i + 1) begin
             for (j = 0; j < img_size; j = j + 1) begin
-                for (k = 0; k < ifm_channels / 16; k = k + 1) begin
+                for (k = 0; k < ifm_channel_tiles; k = k + 1) begin
                     logic [DATA_WIDTH*16-1:0] tmp_ifm;
-                    idx = (i * img_size + j) * (ifm_channels / 16) + k;
+                    idx = (i * img_size + j) * ifm_channel_tiles + k;
                     for (l = 0; l < 16; l = l + 1) begin
                         tmp_ifm[l*DATA_WIDTH +: DATA_WIDTH] = ifm_mem[idx * 16 + l];
                     end
@@ -242,22 +242,16 @@ module Executor_tb;
             output_bram_inst.xpm_memory_base_inst.mem[i] = 0;
         end
 
-        instruction = 64'h0109000020561020;
+        // instruction = 64'h0109000020561020;
+        instruction = 64'h0109000020562012;
 
         rst_n = 0;
         #100;
         rst_n = 1;
         wait(done);
 
-        instruction = 64'h1000000020282020;
-
-        rst_n = 0;
-        #100;
-        rst_n = 1;
-        wait(done);
-        #100;
-
-        instruction = 64'h0108032010352040;
+        // instruction = 64'h1000000020282020;
+        instruction = 64'h1000000020281022;
 
         rst_n = 0;
         #100;
@@ -265,7 +259,8 @@ module Executor_tb;
         wait(done);
         #100;
 
-        instruction = 64'h010807A010394040;
+        // instruction = 64'h0108032010352040;
+        instruction = 64'h0108032010351024;
 
         rst_n = 0;
         #100;
@@ -273,7 +268,8 @@ module Executor_tb;
         wait(done);
         #100;
 
-        instruction = 64'h010810A008394080;
+        // instruction = 64'h010807A010394040;
+        instruction = 64'h010807A010390844;
 
         rst_n = 0;
         #100;
@@ -281,7 +277,8 @@ module Executor_tb;
         wait(done);
         #100;
 
-        instruction = 64'h3004000004448080;
+        // instruction = 64'h010810A008394080;
+        instruction = 64'h010810A008390448;
 
         rst_n = 0;
         #100;
@@ -289,7 +286,17 @@ module Executor_tb;
         wait(done);
         #100;
 
-        instruction = 64'h000622A001148010;
+        // instruction = 64'h3004000004448080;
+        instruction = 64'h3004000004440188;
+
+        rst_n = 0;
+        #100;
+        rst_n = 1;
+        wait(done);
+        #100;
+
+        // instruction = 64'h000622A001148010;
+        instruction = 64'h000622A001140181;
 
         rst_n = 0;
         #100;
@@ -300,13 +307,13 @@ module Executor_tb;
         $display("Simulation Finished.");
 
         out_size = 1;
-        ofm_channels = 16;
+        ofm_channel_tiles = 1;
 
         for (i = 0; i < out_size; i = i + 1) begin
             for (j = 0; j < out_size; j = j + 1) begin
-                for (k = 0; k < ofm_channels / 16; k = k + 1) begin
+                for (k = 0; k < ofm_channel_tiles; k = k + 1) begin
                     logic signed [127:0] dut_output;
-                    idx = (i * out_size + j) * (ofm_channels / 16) + k;
+                    idx = (i * out_size + j) * ofm_channel_tiles + k;
                     dut_output = ifm_bram_inst.xpm_memory_base_inst.mem[idx];
                     for (l = 0; l < 16; l = l + 1) begin
                         logic signed [7:0] dut_val;

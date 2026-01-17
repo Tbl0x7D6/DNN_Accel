@@ -19,8 +19,8 @@ module Pooling_tb;
     logic [1:0] stride = 1;
     logic [1:0] padding = 0;
 
-    logic [7:0] ifm_channels = 32;
-    logic [7:0] ofm_channels = 32;
+    logic [3:0] ifm_channel_tiles = 2;
+    logic [3:0] ofm_channel_tiles = 2;
 
     logic pooling_type = 0;
 
@@ -49,7 +49,8 @@ module Pooling_tb;
         .img_size(img_size),
         .k_size(k_size),
         .stride(stride),
-        .ifm_channels(ifm_channels),
+        .out_size(out_size),
+        .ifm_channel_tiles(ifm_channel_tiles),
         .done(done),
         .ifm_data(ifm_data),
         .ifm_addr(ifm_addr),
@@ -176,15 +177,15 @@ module Pooling_tb;
         $readmemh("c:/Users/be/Desktop/DNN_Accel/Test_Generator/data/golden.txt", golden_mem);
 
         fp = $fopen("c:/Users/be/Desktop/DNN_Accel/Test_Generator/data/config.txt", "r");
-        $fscanf(fp, "%d %d %d %d %d %d %d\n", img_size, ifm_channels, out_size, ofm_channels, k_size, stride, padding);
+        $fscanf(fp, "%d %d %d %d %d %d %d\n", img_size, ifm_channel_tiles, out_size, ofm_channel_tiles, k_size, stride, padding);
         $fscanf(fp, "%d\n", pooling_type);
 
         // 2. Initialize DUT Internal Memories
         for (i = 0; i < img_size; i = i + 1) begin
             for (j = 0; j < img_size; j = j + 1) begin
-                for (k = 0; k < ifm_channels / 16; k = k + 1) begin
+                for (k = 0; k < ifm_channel_tiles; k = k + 1) begin
                     logic [DATA_WIDTH*16-1:0] tmp_ifm;
-                    idx = (i * img_size + j) * (ifm_channels / 16) + k;
+                    idx = (i * img_size + j) * ifm_channel_tiles + k;
                     for (l = 0; l < 16; l = l + 1) begin
                         tmp_ifm[l*DATA_WIDTH +: DATA_WIDTH] = ifm_mem[idx * 16 + l];
                     end
@@ -210,9 +211,9 @@ module Pooling_tb;
         // 5. Check Results
         for (i = 0; i < out_size; i = i + 1) begin
             for (j = 0; j < out_size; j = j + 1) begin
-                for (k = 0; k < ofm_channels / 16; k = k + 1) begin
+                for (k = 0; k < ofm_channel_tiles; k = k + 1) begin
                     logic signed [ACC_WIDTH*16-1:0] dut_output;
-                    idx = (i * out_size + j) * (ofm_channels / 16) + k;
+                    idx = (i * out_size + j) * ofm_channel_tiles + k;
                     dut_output = output_bram_inst.xpm_memory_base_inst.mem[idx];
                     for (l = 0; l < 16; l = l + 1) begin
                         logic signed [ACC_WIDTH-1:0] dut_val;

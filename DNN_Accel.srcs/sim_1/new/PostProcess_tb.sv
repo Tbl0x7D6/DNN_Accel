@@ -13,7 +13,7 @@ module PostProcess_tb;
         .clk(uut.clk),
         .rst_n(rst_n),
         .out_size(uut.out_size),
-        .ofm_channels(uut.ofm_channels),
+        .ofm_channel_tiles(uut.ofm_channel_tiles),
         .ReLU(1),
         .Q(Q),
 
@@ -53,9 +53,9 @@ module PostProcess_tb;
 
         for (i = 0; i < uut.out_size; i = i + 1) begin
             for (j = 0; j < uut.out_size; j = j + 1) begin
-                for (k = 0; k < uut.ofm_channels / 16; k = k + 1) begin
+                for (k = 0; k < uut.ofm_channel_tiles; k = k + 1) begin
                     logic signed [127:0] dut_output;
-                    idx = (i * uut.out_size + j) * (uut.ofm_channels / 16) + k;
+                    idx = (i * uut.out_size + j) * uut.ofm_channel_tiles + k;
                     dut_output = uut.ifm_bram_inst.xpm_memory_base_inst.mem[idx];
                     for (l = 0; l < 16; l = l + 1) begin
                         logic signed [7:0] dut_val;
@@ -74,9 +74,9 @@ module PostProcess_tb;
         // check if correctly reset ofm bram to 0
         for (i = 0; i < uut.out_size; i = i + 1) begin
             for (j = 0; j < uut.out_size; j = j + 1) begin
-                for (k = 0; k < uut.ofm_channels / 16; k = k + 1) begin
+                for (k = 0; k < uut.ofm_channel_tiles; k = k + 1) begin
                     logic signed [127:0] dut_output;
-                    idx = (i * uut.out_size + j) * (uut.ofm_channels / 16) + k;
+                    idx = (i * uut.out_size + j) * uut.ofm_channel_tiles + k;
                     dut_output = uut.output_bram_inst.xpm_memory_base_inst.mem[idx];
                     for (l = 0; l < 16; l = l + 1) begin
                         logic signed [7:0] dut_val;

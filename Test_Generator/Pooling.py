@@ -21,7 +21,7 @@ PAD = int(padding)
 os.makedirs('Test_Generator/data', exist_ok=True)
 
 with open('Test_Generator/data/config.txt', 'w') as f:
-    f.write(f'{IFM_H} {IFM_C} {OFM_H} {OFM_C} {K_H} {STRIDE} {PAD}\n')
+    f.write(f'{IFM_H} {IFM_C//16} {OFM_H} {OFM_C//16} {K_H} {STRIDE} {PAD}\n')
     f.write(f'{pooling_type}\n')
 
 ifm = np.random.randint(-50, 50, size=(IFM_C, IFM_H, IFM_W)).astype(np.int8)

@@ -14,8 +14,9 @@ module Pooling #(
     input logic [7:0] img_size,
     input logic [3:0] k_size,
     input logic [1:0] stride,
+    input logic [7:0] out_size,
 
-    input logic [7:0] ifm_channels,
+    input logic [3:0] ifm_channel_tiles,
 
     input  logic [DATA_WIDTH*16-1:0] ifm_data,
     output logic [15:0]              ifm_addr,
@@ -35,11 +36,6 @@ module Pooling #(
     logic [7:0] oy;
     logic [3:0] tile;
 
-    logic [7:0] out_size;
-    always_comb begin
-        out_size = ((img_size - k_size) / stride) + 1;
-    end
-
     AGU pooling_agu (
         .clk(clk),
         .rst_n(rst_n),
@@ -48,8 +44,9 @@ module Pooling #(
         .k_size(k_size),
         .stride(stride),
         .padding(0),
-        .ifm_channels(ifm_channels),
-        .ofm_channels(1),
+        .out_size(out_size),
+        .ifm_channel_tiles(ifm_channel_tiles),
+        .ofm_channel_tiles(1),
         .ix(ix),
         .iy(iy),
         .ox(ox),
@@ -70,8 +67,8 @@ module Pooling #(
     logic is_first_read;
 
     always_comb begin
-        ifm_addr    = (iy * img_size + ix) * (ifm_channels / 16) + tile;
-        ofm_rd_addr = (oy * out_size + ox) * (ifm_channels / 16) + tile;
+        ifm_addr    = (iy * img_size + ix) * ifm_channel_tiles + tile;
+        ofm_rd_addr = (oy * out_size + ox) * ifm_channel_tiles + tile;
         ofm_wr_addr = prev_output_addr_2;
         ofm_wr_en   = write_back_2;
     end
@@ -83,7 +80,7 @@ module Pooling #(
         end else begin
             write_back_1 <= !done;
             write_back_2 <= write_back_1;
-            prev_output_addr_1 <= (oy * out_size + ox) * (ifm_channels / 16) + tile;
+            prev_output_addr_1 <= (oy * out_size + ox) * ifm_channel_tiles + tile;
             prev_output_addr_2 <= prev_output_addr_1;
 
             for (integer i = 0; i < 16; i++) begin
