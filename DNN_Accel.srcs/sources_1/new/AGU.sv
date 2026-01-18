@@ -32,8 +32,6 @@ module AGU(
     logic [31:0] count;
 
     always_comb begin
-        ix = ox * stride + kx - padding;
-        iy = oy * stride + ky - padding;
         if (ix < 0 || ix >= img_size || iy < 0 || iy >= img_size) begin
             is_pad = 1;
         end else begin
@@ -45,26 +43,50 @@ module AGU(
         if (!rst_n) begin
             count <= 0;
             {ox, oy, kx, ky, ifm_tile, ofm_tile} <= 0;
+            ix <= -signed'({1'b0, padding});
+            iy <= -signed'({1'b0, padding});
             done <= 0;
         end else if (next) begin
             count <= count + 1;
-            ox <= ox + 1;
-            if (ox == out_size - 1) begin
+            
+            if (ox != out_size - 1) begin
+                ox <= ox + 1;
+
+                ix <= ix + signed'({1'b0, stride});
+            end else begin
                 ox <= 0;
-                oy <= oy + 1;
-                if (oy == out_size - 1) begin
+                if (oy != out_size - 1) begin
+                    oy <= oy + 1;
+
+                    ix <= signed'({1'b0, kx}) - signed'({1'b0, padding});
+                    iy <= iy + signed'({1'b0, stride});
+                end else begin
                     oy <= 0;
-                    kx <= kx + 1;
-                    if (kx == k_size - 1) begin
+                    if (kx != k_size - 1) begin
+                        kx <= kx + 1;
+
+                        ix <= signed'({1'b0, kx}) + 1 - signed'({1'b0, padding});
+                        iy <= signed'({1'b0, ky}) - signed'({1'b0, padding});
+                    end else begin
                         kx <= 0;
-                        ky <= ky + 1;
-                        if (ky == k_size - 1) begin
+                        if (ky != k_size - 1) begin
+                            ky <= ky + 1;
+
+                            ix <= -signed'({1'b0, padding});
+                            iy <= signed'({1'b0, ky}) + 1 - signed'({1'b0, padding});
+                        end else begin
                             ky <= 0;
-                            ifm_tile <= ifm_tile + 1;
-                            if (ifm_tile == ifm_channel_tiles - 1) begin
+
+                            ix <= -signed'({1'b0, padding});
+                            iy <= -signed'({1'b0, padding});
+
+                            if (ifm_tile != ifm_channel_tiles - 1) begin
+                                ifm_tile <= ifm_tile + 1;
+                            end else begin
                                 ifm_tile <= 0;
-                                ofm_tile <= ofm_tile + 1;
-                                if (ofm_tile == ofm_channel_tiles - 1) begin
+                                if (ofm_tile != ofm_channel_tiles - 1) begin
+                                    ofm_tile <= ofm_tile + 1;
+                                end else begin
                                     ofm_tile <= 0;
                                     done <= 1;
                                 end
