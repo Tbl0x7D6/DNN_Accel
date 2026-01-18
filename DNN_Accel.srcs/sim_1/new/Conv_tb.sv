@@ -246,19 +246,12 @@ module Conv_tb;
                 end
             end
         end
-        for (i = 0; i < k_size; i = i + 1) begin
-            for (j = 0; j < k_size; j = j + 1) begin
-                for (k = 0; k < ifm_channel_tiles * 16; k = k + 1) begin
-                    for (l = 0; l < ofm_channel_tiles; l = l + 1) begin
-                        logic [DATA_WIDTH*16-1:0] tmp_weight;
-                        idx = ((i * k_size + j) * ifm_channel_tiles * 16 + k) * ofm_channel_tiles + l;
-                        for (m = 0; m < 16; m = m + 1) begin
-                            tmp_weight[m*DATA_WIDTH +: DATA_WIDTH] = wgt_mem[idx * 16 + m]; 
-                        end
-                        weight_bram_inst.xpm_memory_base_inst.mem[idx] = tmp_weight;
-                    end
-                end
+        for (idx = 0; idx < k_size * k_size * ifm_channel_tiles * ofm_channel_tiles * 16; idx++) begin
+            logic [DATA_WIDTH*16-1:0] tmp_weight;
+            for (m = 0; m < 16; m = m + 1) begin
+                tmp_weight[m*DATA_WIDTH +: DATA_WIDTH] = wgt_mem[idx * 16 + m]; 
             end
+            weight_bram_inst.xpm_memory_base_inst.mem[idx] = tmp_weight;
         end
         for (i = 0; i < 2048; i = i + 1) begin
             output_bram_inst.xpm_memory_base_inst.mem[i] = 0;

@@ -186,21 +186,19 @@ def write_weights_to_file():
                 weights_padded.append(oc_data)
             weights = weights_padded
         
-        # 按照 (kh, kw, ic, oc) 的顺序组织
-        for kh in range(k):
-            for kw in range(k):
-                for ic_idx in range(ic_padded):
-                    for oc_idx in range(oc_padded):
-                        if ic_idx < ic and oc_idx < oc:
-                            # 原始权重：weights[oc][ic][kh][kw]
-                            w_val = weights[oc_idx][ic_idx][kh][kw]
-                        else:
-                            # 填充0
-                            w_val = 0
-                        
-                        # 每个权重是8bit，转换为uint8
-                        w_uint8 = np.int8(w_val).view(np.uint8)
-                        all_weights.append(w_uint8)
+        # 构建填充后的权重张量，形状 (oc_padded, ic_padded, k, k)
+        weight_tensor = np.zeros((oc_padded, ic_padded, k, k), dtype=np.int8)
+        for oc_idx in range(oc):
+            for ic_idx in range(ic):
+                weight_tensor[oc_idx, ic_idx] = np.array(weights[oc_idx][ic_idx], dtype=np.int8)
+
+        # 按 conv.py 的方式重排：先分块再转置，最终顺序为
+        # (oc_blk, ic_blk, kh, kw, ic_inner, oc_inner)
+        oc_blocks = oc_padded // 16
+        ic_blocks = ic_padded // 16
+        weight_blocked = weight_tensor.reshape(oc_blocks, 16, ic_blocks, 16, k, k)
+        weight_reordered = weight_blocked.transpose(0, 2, 4, 5, 3, 1).flatten()
+        all_weights.extend(weight_reordered.astype(np.uint8).tolist())
     
     # 处理FC层（视为1x1卷积，128->10，填充到128->16）
     fc_ic = 128
@@ -210,18 +208,17 @@ def write_weights_to_file():
     
     fc_weights = read_fc_weight(fc_ic, fc_oc)
     
-    # FC作为1x1卷积，kh=1, kw=1
-    for kh in range(1):
-        for kw in range(1):
-            for ic_idx in range(fc_ic_padded):
-                for oc_idx in range(fc_oc_padded):
-                    if ic_idx < fc_ic and oc_idx < fc_oc:
-                        w_val = fc_weights[oc_idx][ic_idx]
-                    else:
-                        w_val = 0
-                    
-                    w_uint8 = np.int8(w_val).view(np.uint8)
-                    all_weights.append(w_uint8)
+    # FC作为1x1卷积，同样按 conv.py 的方式重排
+    fc_tensor = np.zeros((fc_oc_padded, fc_ic_padded, 1, 1), dtype=np.int8)
+    for oc_idx in range(fc_oc):
+        for ic_idx in range(fc_ic):
+            fc_tensor[oc_idx, ic_idx, 0, 0] = np.int8(fc_weights[oc_idx][ic_idx])
+
+    fc_oc_blocks = fc_oc_padded // 16
+    fc_ic_blocks = fc_ic_padded // 16
+    fc_blocked = fc_tensor.reshape(fc_oc_blocks, 16, fc_ic_blocks, 16, 1, 1)
+    fc_reordered = fc_blocked.transpose(0, 2, 4, 5, 3, 1).flatten()
+    all_weights.extend(fc_reordered.astype(np.uint8).tolist())
     
     # 写入文件
     os.makedirs('Test_Generator/data', exist_ok=True)

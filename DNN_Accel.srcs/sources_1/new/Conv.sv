@@ -118,6 +118,75 @@ module Conv #(
         end
     endgenerate
 
+    logic filter_fifo_wr_en [0:15];
+    logic filter_fifo_rd_en [0:15];
+    logic filter_fifo_full  [0:15];
+    logic signed [DATA_WIDTH-1:0] filter_fifo_din  [0:15];
+    logic signed [DATA_WIDTH-1:0] filter_fifo_dout [0:15];
+
+    logic filter_fifo_can_write;
+
+    always_comb begin
+        filter_fifo_can_write = 1;
+        for (integer i = 0; i < 16; i++) begin
+            if (filter_fifo_full[i]) begin
+                filter_fifo_can_write = 0;
+            end
+        end
+    end
+
+    generate
+        for (genvar i = 0; i < 16; i++) begin : FILTER_FIFO_GEN
+            xpm_fifo_sync # (
+
+                .FIFO_MEMORY_TYPE          ("auto"),           //string; "auto", "block", "distributed", or "ultra";
+                .ECC_MODE                  ("no_ecc"),         //string; "no_ecc" or "en_ecc";
+                .FIFO_WRITE_DEPTH          (64),             //positive integer
+                .WRITE_DATA_WIDTH          (DATA_WIDTH),               //positive integer
+                .WR_DATA_COUNT_WIDTH       (6),               //positive integer
+                .PROG_FULL_THRESH          (59),               //positive integer
+                .FULL_RESET_VALUE          (0),                //positive integer; 0 or 1
+                .USE_ADV_FEATURES          ("0707"),           //string; "0000" to "1F1F"; 
+                .READ_MODE                 ("fwft"),            //string; "std" or "fwft";
+                .FIFO_READ_LATENCY         (1),                //positive integer;
+                .READ_DATA_WIDTH           (DATA_WIDTH),               //positive integer
+                .RD_DATA_COUNT_WIDTH       (6),               //positive integer
+                .PROG_EMPTY_THRESH         (10),               //positive integer
+                .DOUT_RESET_VALUE          ("0"),              //string
+                .WAKEUP_TIME               (0)                 //positive integer; 0 or 2;
+
+            ) xpm_fifo_sync_inst (
+
+                .sleep            (1'b0),
+                .rst              (~rst_n),
+                .wr_clk           (clk),
+                .wr_en            (filter_fifo_wr_en[i]),
+                .din              (filter_fifo_din[i]),
+                .full             (),
+                .overflow         (),
+                .prog_full        (filter_fifo_full[i]),
+                .wr_data_count    (),
+                .almost_full      (),
+                .wr_ack           (),
+                .wr_rst_busy      (),
+                .rd_en            (filter_fifo_rd_en[i]),
+                .dout             (filter_fifo_dout[i]),
+                .empty            (),
+                .prog_empty       (),
+                .rd_data_count    (),
+                .almost_empty     (),
+                .data_valid       (),
+                .underflow        (),
+                .rd_rst_busy      (),
+                .injectsbiterr    (1'b0),
+                .injectdbiterr    (1'b0),
+                .sbiterr          (),
+                .dbiterr          ()
+
+            );
+        end
+    endgenerate
+
     logic output_fifo_wr_en [0:15];
     logic output_fifo_rd_en [0:15];
     logic output_fifo_empty [0:15];
@@ -252,13 +321,41 @@ module Conv #(
     end
 
 
+    logic filter_done;
+    logic write_filter_fifo;
+
+    always_comb begin
+        filter_done = (filter_addr >= (k_size * k_size * ifm_channel_tiles * ofm_channel_tiles * 16));
+    end
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            for (integer i = 0; i < 16; i++) begin
+                filter_fifo_wr_en[i] <= 0;
+            end
+            write_filter_fifo <= 0;
+            filter_addr <= 0;
+        end else begin
+            if (filter_fifo_can_write && !filter_done) begin
+                write_filter_fifo <= 1;
+                filter_addr <= filter_addr + 1;
+            end else begin
+                write_filter_fifo <= 0;
+            end
+            for (integer i = 0; i < 16; i++) begin
+                filter_fifo_wr_en[i] <= write_filter_fifo;
+            end
+            if (write_filter_fifo) begin
+                for (integer i = 0; i < 16; i++) begin
+                    filter_fifo_din[i] <= filter_data[DATA_WIDTH*i +: DATA_WIDTH];
+                end
+            end
+        end
+    end
+
+
     logic [7:0] wait_count;
     logic [31:0] pe_cycle_count;
-
-    logic [3:0] pe_kx;
-    logic [3:0] pe_ky;
-    logic [3:0] pe_ifm_tile;
-    logic [3:0] pe_ofm_tile;
 
     localparam PE_WAIT_BEFORE_START = 6;
     localparam PE_WAIT_BEFORE_SWITCH_KERNEL = 3;
@@ -274,22 +371,17 @@ module Conv #(
     end
 
     always_comb begin
-        logic [7:0] row;
-        if (wait_count < PE_WAIT_BEFORE_START ||
-            pe_cycle_count >= out_size * out_size + 16 + 16 + PE_WAIT_BEFORE_SWITCH_KERNEL
-        ) begin
-            row = 0;
-        end else begin
-            row = pe_cycle_count + 1;
+        for (integer i = 0; i < 16; i++) begin
+            if (wait_count == PE_WAIT_BEFORE_START && pe_cycle_count < 16) begin
+                filter_fifo_rd_en[i] = 1;
+            end else begin
+                filter_fifo_rd_en[i] = 0;
+            end
         end
-        filter_addr = (pe_ky * k_size + pe_kx) * ifm_channel_tiles * ofm_channel_tiles * 16
-                            + (pe_ifm_tile * 16 + row) * ofm_channel_tiles
-                            + pe_ofm_tile;
     end
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            {pe_kx, pe_ky, pe_ifm_tile, pe_ofm_tile} <= 0;
             pe_cycle_count <= 0;
             wait_count <= 0;
         end else begin
@@ -298,39 +390,15 @@ module Conv #(
             end else begin
                 pe_cycle_count <= pe_cycle_count + 1;
 
-                // switch to next kernel position
                 if (pe_cycle_count == out_size * out_size + 16 + 16 + PE_WAIT_BEFORE_SWITCH_KERNEL) begin
                     pe_cycle_count <= 0;
-                end else if (pe_cycle_count == out_size * out_size + 16 + 16 + PE_WAIT_BEFORE_SWITCH_KERNEL - 1) begin
-                    pe_kx <= pe_kx + 1;
-                    if (pe_kx == k_size - 1) begin
-                        pe_kx <= 0;
-                        pe_ky <= pe_ky + 1;
-                        if (pe_ky == k_size - 1) begin
-                            pe_ky <= 0;
-                            pe_ifm_tile <= pe_ifm_tile + 1;
-                            if (pe_ifm_tile == ifm_channel_tiles - 1) begin
-                                pe_ifm_tile <= 0;
-                                pe_ofm_tile <= pe_ofm_tile + 1;
-                                if (pe_ofm_tile == ofm_channel_tiles - 1) begin
-                                    pe_ofm_tile <= 0;
-                                end
-                            end
-                        end
-                    end
                 end
 
                 // load weights
-                if (pe_cycle_count < 16) begin
-                    for (integer oc = 0; oc < 16; oc++) begin
-                        weight_in[pe_cycle_count][oc] <= filter_data[DATA_WIDTH*oc +: DATA_WIDTH];
-                    end
-                end
+                weight_in[pe_cycle_count] <= filter_fifo_dout;
 
                 // load ifm
-                for (integer i = 0; i < 16; i++) begin
-                    ifm_in[i] <= input_fifo_dout[i];
-                end
+                ifm_in <= input_fifo_dout;
 
                 // send psum_out to output fifo
                 if (pe_cycle_count >= 16 + 1 &&

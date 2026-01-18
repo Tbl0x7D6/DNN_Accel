@@ -55,8 +55,10 @@ ifm_transposed = ifm.transpose(1, 2, 0)
 ifm_u8 = ifm_transposed.flatten().astype(np.uint8)
 np.savetxt('Test_Generator/data/ifm.txt', ifm_u8, fmt='%02x')
 
-# Transpose to (K_H, K_W, IC, OC)
-weights_transposed = weights.transpose(2, 3, 1, 0)
+# WHAT THE FUCK???
+weights_transposed = weights.reshape((OFM_C // 16, 16, IFM_C // 16, 16, K_H, K_W)) \
+                            .transpose(0, 2, 4, 5, 3, 1)
+
 # Flatten
 wgt_u8 = weights_transposed.flatten().astype(np.uint8)
 np.savetxt('Test_Generator/data/weights.txt', wgt_u8, fmt='%02x')
