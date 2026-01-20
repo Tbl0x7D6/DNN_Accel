@@ -58,7 +58,7 @@ module PostProcess #(
     logic write_back_2;
 
     always_comb begin
-        addr = (oy * out_size + ox) * ofm_channel_tiles + tile;
+        addr = (tile * out_size + oy) * out_size + ox;
 
         input_rd_addr = addr;
         output_en = write_back_2;

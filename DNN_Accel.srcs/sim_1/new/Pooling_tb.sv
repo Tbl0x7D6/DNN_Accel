@@ -166,8 +166,6 @@ module Pooling_tb;
         forever #5 clk = ~clk;
     end
     
-    integer i, j, k, l, m;
-    integer idx;
     integer fp;
     
     initial begin
@@ -181,19 +179,14 @@ module Pooling_tb;
         $fscanf(fp, "%d\n", pooling_type);
 
         // 2. Initialize DUT Internal Memories
-        for (i = 0; i < img_size; i = i + 1) begin
-            for (j = 0; j < img_size; j = j + 1) begin
-                for (k = 0; k < ifm_channel_tiles; k = k + 1) begin
-                    logic [DATA_WIDTH*16-1:0] tmp_ifm;
-                    idx = (i * img_size + j) * ifm_channel_tiles + k;
-                    for (l = 0; l < 16; l = l + 1) begin
-                        tmp_ifm[l*DATA_WIDTH +: DATA_WIDTH] = ifm_mem[idx * 16 + l];
-                    end
-                    ifm_bram_inst.xpm_memory_base_inst.mem[idx] = tmp_ifm;
-                end
+        for (integer idx = 0; idx < img_size * img_size * ifm_channel_tiles; idx++) begin
+            logic [DATA_WIDTH*16-1:0] tmp_ifm;
+            for (integer l = 0; l < 16; l = l + 1) begin
+                tmp_ifm[l*DATA_WIDTH +: DATA_WIDTH] = ifm_mem[idx * 16 + l];
             end
+            ifm_bram_inst.xpm_memory_base_inst.mem[idx] = tmp_ifm;
         end
-        for (i = 0; i < 2048; i = i + 1) begin
+        for (integer i = 0; i < 2048; i = i + 1) begin
             output_bram_inst.xpm_memory_base_inst.mem[i] = 0;
         end
         
@@ -209,23 +202,22 @@ module Pooling_tb;
         $display("Simulation Finished.");
         
         // 5. Check Results
-        for (i = 0; i < out_size; i = i + 1) begin
-            for (j = 0; j < out_size; j = j + 1) begin
-                for (k = 0; k < ofm_channel_tiles; k = k + 1) begin
-                    logic signed [ACC_WIDTH*16-1:0] dut_output;
-                    idx = (i * out_size + j) * ofm_channel_tiles + k;
-                    dut_output = output_bram_inst.xpm_memory_base_inst.mem[idx];
-                    for (l = 0; l < 16; l = l + 1) begin
-                        logic signed [ACC_WIDTH-1:0] dut_val;
-                        dut_val = $signed(dut_output[l*ACC_WIDTH +: ACC_WIDTH]);
-                        $display("Checking OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
-                                 i, j, k * 16 + l, dut_val, golden_mem[idx * 16 + l]);
-                        if (dut_val !== golden_mem[idx * 16 + l]) begin
-                            $display("Mismatch at OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
-                                    i, j, k * 16 + l, dut_val, golden_mem[idx * 16 + l]);
-                            $finish;
-                        end
-                    end
+        for (integer idx = 0; idx < out_size * out_size * ofm_channel_tiles; idx++) begin
+            integer i = (idx / out_size) % out_size;
+            integer j = idx % out_size;
+            integer k = idx / (out_size * out_size);
+
+            logic signed [ACC_WIDTH*16-1:0] dut_output;
+            dut_output = output_bram_inst.xpm_memory_base_inst.mem[idx];
+            for (integer l = 0; l < 16; l = l + 1) begin
+                logic signed [ACC_WIDTH-1:0] dut_val;
+                dut_val = $signed(dut_output[l*ACC_WIDTH +: ACC_WIDTH]);
+                $display("Checking OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
+                            i, j, k * 16 + l, dut_val, golden_mem[idx * 16 + l]);
+                if (dut_val !== golden_mem[idx * 16 + l]) begin
+                    $display("Mismatch at OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
+                            i, j, k * 16 + l, dut_val, golden_mem[idx * 16 + l]);
+                    $finish;
                 end
             end
         end

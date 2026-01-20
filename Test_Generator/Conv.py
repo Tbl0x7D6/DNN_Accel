@@ -49,8 +49,8 @@ for oc in range(OFM_C):
                         acc += val * w
             ofm[oc, oh, ow] = acc
 
-# Transpose to (H, W, C)
-ifm_transposed = ifm.transpose(1, 2, 0)
+ifm_transposed = ifm.reshape((IFM_C // 16, 16, IFM_H, IFM_W)) \
+                    .transpose(0, 2, 3, 1)
 # Flatten
 ifm_u8 = ifm_transposed.flatten().astype(np.uint8)
 np.savetxt('Test_Generator/data/ifm.txt', ifm_u8, fmt='%02x')
@@ -63,8 +63,8 @@ weights_transposed = weights.reshape((OFM_C // 16, 16, IFM_C // 16, 16, K_H, K_W
 wgt_u8 = weights_transposed.flatten().astype(np.uint8)
 np.savetxt('Test_Generator/data/weights.txt', wgt_u8, fmt='%02x')
 
-# Transpose to (H, W, C)
-ofm_transposed = ofm.transpose(1, 2, 0)
+ofm_transposed = ofm.reshape((OFM_C // 16, 16, OFM_H, OFM_W)) \
+                    .transpose(0, 2, 3, 1)
 # Flatten
 ofm_flat = ofm_transposed.flatten()
 # Use a custom format for 32-bit signed integers

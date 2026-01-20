@@ -32,9 +32,6 @@ module PostProcess_tb;
 
     logic signed [7:0] golden_mem [0:2048*16-1];
 
-    integer i, j, k, l, m;
-    integer idx;
-
     initial begin
         rst_n = 0;
         wait(uut.done);
@@ -51,42 +48,40 @@ module PostProcess_tb;
         #100;
         $display("Simulation Finished.");
 
-        for (i = 0; i < uut.out_size; i = i + 1) begin
-            for (j = 0; j < uut.out_size; j = j + 1) begin
-                for (k = 0; k < uut.ofm_channel_tiles; k = k + 1) begin
-                    logic signed [127:0] dut_output;
-                    idx = (i * uut.out_size + j) * uut.ofm_channel_tiles + k;
-                    dut_output = uut.ifm_bram_inst.xpm_memory_base_inst.mem[idx];
-                    for (l = 0; l < 16; l = l + 1) begin
-                        logic signed [7:0] dut_val;
-                        dut_val = $signed(dut_output[l*8 +: 8]);
-                        $display("Checking OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
-                                 i, j, k * 16 + l, dut_val, golden_mem[idx * 16 + l]);
-                        if (dut_val !== golden_mem[idx * 16 + l]) begin
-                            $display("Mismatch at OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
-                                    i, j, k * 16 + l, dut_val, golden_mem[idx * 16 + l]);
-                        end
-                    end
+        for (integer idx = 0; idx < uut.out_size * uut.out_size * uut.ofm_channel_tiles; idx++) begin
+            integer i = (idx / uut.out_size) % uut.out_size;
+            integer j = idx % uut.out_size;
+            integer k = idx / (uut.out_size * uut.out_size);
+
+            logic signed [127:0] dut_output;
+            dut_output = uut.ifm_bram_inst.xpm_memory_base_inst.mem[idx];
+            for (integer l = 0; l < 16; l = l + 1) begin
+                logic signed [7:0] dut_val;
+                dut_val = $signed(dut_output[l*8 +: 8]);
+                $display("Checking OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
+                            i, j, k * 16 + l, dut_val, golden_mem[idx * 16 + l]);
+                if (dut_val !== golden_mem[idx * 16 + l]) begin
+                    $display("Mismatch at OFM(%0d,%0d,%0d): DUT=%0d, GOLDEN=%0d",
+                            i, j, k * 16 + l, dut_val, golden_mem[idx * 16 + l]);
                 end
             end
         end
 
         // check if correctly reset ofm bram to 0
-        for (i = 0; i < uut.out_size; i = i + 1) begin
-            for (j = 0; j < uut.out_size; j = j + 1) begin
-                for (k = 0; k < uut.ofm_channel_tiles; k = k + 1) begin
-                    logic signed [127:0] dut_output;
-                    idx = (i * uut.out_size + j) * uut.ofm_channel_tiles + k;
-                    dut_output = uut.output_bram_inst.xpm_memory_base_inst.mem[idx];
-                    for (l = 0; l < 16; l = l + 1) begin
-                        logic signed [7:0] dut_val;
-                        dut_val = $signed(dut_output[l*8 +: 8]);
-                        if (dut_val !== 0) begin
-                            $display("Reset Mismatch at (%0d,%0d,%0d): DUT=%0d, GOLDEN=0",
-                                    i, j, k * 16 + l, dut_val);
-                            $finish;
-                        end
-                    end
+        for (integer idx = 0; idx < uut.out_size * uut.out_size * uut.ofm_channel_tiles; idx++) begin
+            integer i = (idx / uut.out_size) % uut.out_size;
+            integer j = idx % uut.out_size;
+            integer k = idx / (uut.out_size * uut.out_size);
+
+            logic signed [127:0] dut_output;
+            dut_output = uut.output_bram_inst.xpm_memory_base_inst.mem[idx];
+            for (integer l = 0; l < 16; l = l + 1) begin
+                logic signed [7:0] dut_val;
+                dut_val = $signed(dut_output[l*8 +: 8]);
+                if (dut_val !== 0) begin
+                    $display("Reset Mismatch at (%0d,%0d,%0d): DUT=%0d, GOLDEN=0",
+                            i, j, k * 16 + l, dut_val);
+                    $finish;
                 end
             end
         end

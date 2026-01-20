@@ -67,8 +67,8 @@ module Pooling #(
     logic is_first_read;
 
     always_comb begin
-        ifm_addr    = (iy * img_size + ix) * ifm_channel_tiles + tile;
-        ofm_rd_addr = (oy * out_size + ox) * ifm_channel_tiles + tile;
+        ifm_addr    = (tile * img_size + iy) * img_size + ix;
+        ofm_rd_addr = (tile * out_size + oy) * out_size + ox;
         ofm_wr_addr = prev_output_addr_2;
         ofm_wr_en   = write_back_2;
     end
@@ -80,7 +80,7 @@ module Pooling #(
         end else begin
             write_back_1 <= !done;
             write_back_2 <= write_back_1;
-            prev_output_addr_1 <= (oy * out_size + ox) * ifm_channel_tiles + tile;
+            prev_output_addr_1 <= (tile * out_size + oy) * out_size + ox;
             prev_output_addr_2 <= prev_output_addr_1;
 
             for (integer i = 0; i < 16; i++) begin

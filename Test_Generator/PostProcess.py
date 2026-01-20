@@ -17,23 +17,21 @@ with open('Test_Generator/data/config.txt', 'r') as f:
 with open('Test_Generator/data/config.txt', 'a') as f:
     f.write(f'{Q}\n')
 
-ofm = np.zeros(dtype = np.int32, shape=(img_size, img_size, oc))
+ofm = np.zeros(dtype = np.int32, shape=(img_size * img_size * oc))
 
 # ReLU and Quantization
 with open('Test_Generator/data/golden.txt', 'r') as f:
-    for i in range(img_size):
-        for j in range(img_size):
-            for k in range(oc):
-                value = int(f.readline().strip(), 16)
-                if value & 0x80000000:
-                    value -= 0x100000000
-                value = value >> int(Q)
-                if value < 0:
-                    ofm[i, j, k] = 0
-                elif value > 127:
-                    ofm[i, j, k] = 127
-                else:
-                    ofm[i, j, k] = value
+    for i in range(img_size * img_size * oc):
+        value = int(f.readline().strip(), 16)
+        if value & 0x80000000:
+            value -= 0x100000000
+        value = value >> int(Q)
+        if value < 0:
+            ofm[i] = 0
+        elif value > 127:
+            ofm[i] = 127
+        else:
+            ofm[i] = value
 
 # Save activated data as hexadecimal
 with open('Test_Generator/data/golden_activated.txt', 'w') as f:

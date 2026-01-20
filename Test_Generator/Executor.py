@@ -268,8 +268,8 @@ def generate_input_image():
     # 只有第一个channel有随机数据
     ifm[0] = np.random.randint(-50, 50, size=(32, 32)).astype(np.int8)
     
-    # 保存为 (H, W, C) 格式，flatten后写入
-    ifm_transposed = ifm.transpose(1, 2, 0)  # (32, 32, 16)
+    ifm_transposed = ifm.reshape((1, 16, 32, 32)) \
+                        .transpose(0, 2, 3, 1)
     ifm_u8 = ifm_transposed.flatten().astype(np.uint8)
     
     os.makedirs('Test_Generator/data', exist_ok=True)
@@ -283,9 +283,9 @@ def generate_input_image():
     return ifm
 
 def save_golden_output(data, filename):
-    """保存golden输出，数据组织为(H, W, C)"""
-    # data shape: (C, H, W)
-    data_transposed = data.transpose(1, 2, 0)  # (H, W, C)
+    """保存golden输出，数据组织参考Conv.py"""
+    data_transposed = data.reshape((data.shape[0] // 16, 16, data.shape[1], data.shape[2])) \
+                        .transpose(0, 2, 3, 1)
     data_flat = data_transposed.flatten()
     
     with open(filename, 'w') as f:

@@ -293,7 +293,7 @@ module Conv #(
     logic prev_input_is_pad;
 
     always_comb begin
-        ifm_addr = (input_iy * img_size + input_ix) * ifm_channel_tiles + input_ifm_tile;
+        ifm_addr = (input_ifm_tile * img_size + input_iy) * img_size + input_ix;
     end
 
     always_ff @(posedge clk) begin
@@ -453,7 +453,7 @@ module Conv #(
     logic signed [PE_ACC_WIDTH-1:0] prev_output   [0:15];
 
     always_comb begin
-        ofm_rd_addr = (output_oy * out_size + output_ox) * ofm_channel_tiles + output_ofm_tile;
+        ofm_rd_addr = (output_ofm_tile * out_size + output_oy) * out_size + output_ox;
         ofm_wr_addr = prev_output_addr_2;
         ofm_wr_en   = write_back_2;
     end
@@ -465,7 +465,7 @@ module Conv #(
         end else begin
             write_back_1 <= output_fifo_can_read;
             write_back_2 <= write_back_1;
-            prev_output_addr_1 <= (output_oy * out_size + output_ox) * ofm_channel_tiles + output_ofm_tile;
+            prev_output_addr_1 <= (output_ofm_tile * out_size + output_oy) * out_size + output_ox;
             prev_output_addr_2 <= prev_output_addr_1;
 
             for (integer i = 0; i < 16; i++) begin
