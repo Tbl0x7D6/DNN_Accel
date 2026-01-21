@@ -260,16 +260,14 @@ module Conv #(
     endgenerate
 
 
-    logic       input_is_pad;
-    logic       input_done;
-    logic [7:0] input_ix;
-    logic [7:0] input_iy;
-    logic [3:0] input_ifm_tile;
+    logic input_is_pad;
+    logic input_done;
 
     AGU input_agu (
         .clk(clk),
         .rst_n(rst_n),
         .next(input_fifo_can_write),
+        .is_conv(1),
         .img_size(img_size),
         .k_size(k_size),
         .stride(stride),
@@ -277,24 +275,13 @@ module Conv #(
         .out_size(out_size),
         .ifm_channel_tiles(ifm_channel_tiles),
         .ofm_channel_tiles(ofm_channel_tiles),
-        .ix(input_ix),
-        .iy(input_iy),
-        .ox(),
-        .oy(),
-        .kx(),
-        .ky(),
-        .ifm_tile(input_ifm_tile),
-        .ofm_tile(),
+        .ifm_addr(ifm_addr),
         .is_pad(input_is_pad),
         .done(input_done)
     );
 
     logic write_input_fifo;
     logic prev_input_is_pad;
-
-    always_comb begin
-        ifm_addr = (input_ifm_tile * img_size + input_iy) * img_size + input_ix;
-    end
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -361,12 +348,12 @@ module Conv #(
     localparam PE_WAIT_BEFORE_SWITCH_KERNEL = 3;
 
     always_comb begin
-        for (integer i = 0; i < 16; i++) begin
-            if (wait_count == PE_WAIT_BEFORE_START && pe_cycle_count >= i && pe_cycle_count < out_size * out_size + i) begin
-                input_fifo_rd_en[i] = 1;
-            end else begin
-                input_fifo_rd_en[i] = 0;
-            end
+        input_fifo_rd_en[0] = wait_count == PE_WAIT_BEFORE_START && pe_cycle_count < out_size * out_size;
+    end
+
+    always_ff @(posedge clk) begin
+        for (integer i = 1; i < 16; i++) begin
+            input_fifo_rd_en[i] <= input_fifo_rd_en[i-1];
         end
     end
 
@@ -418,14 +405,13 @@ module Conv #(
     end
 
 
-    logic [7:0] output_ox;
-    logic [7:0] output_oy;
-    logic [3:0] output_ofm_tile;
+    logic [15:0] ofm_addr;
 
     AGU output_agu (
         .clk(clk),
         .rst_n(rst_n),
         .next(output_fifo_can_read),
+        .is_conv(1),
         .img_size(img_size),
         .k_size(k_size),
         .stride(stride),
@@ -433,15 +419,7 @@ module Conv #(
         .out_size(out_size),
         .ifm_channel_tiles(ifm_channel_tiles),
         .ofm_channel_tiles(ofm_channel_tiles),
-        .ix(),
-        .iy(),
-        .ox(output_ox),
-        .oy(output_oy),
-        .kx(),
-        .ky(),
-        .ifm_tile(),
-        .ofm_tile(output_ofm_tile),
-        .is_pad(),
+        .ofm_addr(ofm_addr),
         .done(done)
     );
 
@@ -453,7 +431,7 @@ module Conv #(
     logic signed [PE_ACC_WIDTH-1:0] prev_output   [0:15];
 
     always_comb begin
-        ofm_rd_addr = (output_ofm_tile * out_size + output_oy) * out_size + output_ox;
+        ofm_rd_addr = ofm_addr;
         ofm_wr_addr = prev_output_addr_2;
         ofm_wr_en   = write_back_2;
     end
@@ -465,7 +443,7 @@ module Conv #(
         end else begin
             write_back_1 <= output_fifo_can_read;
             write_back_2 <= write_back_1;
-            prev_output_addr_1 <= (output_ofm_tile * out_size + output_oy) * out_size + output_ox;
+            prev_output_addr_1 <= ofm_addr;
             prev_output_addr_2 <= prev_output_addr_1;
 
             for (integer i = 0; i < 16; i++) begin

@@ -32,14 +32,13 @@ module Pooling #(
 
     logic signed [7:0] ix;
     logic signed [7:0] iy;
-    logic [7:0] ox;
-    logic [7:0] oy;
-    logic [3:0] tile;
+    logic [15:0] ofm_addr;
 
     AGU pooling_agu (
         .clk(clk),
         .rst_n(rst_n),
         .next(1),
+        .is_conv(0),
         .img_size(img_size),
         .k_size(k_size),
         .stride(stride),
@@ -49,13 +48,8 @@ module Pooling #(
         .ofm_channel_tiles(1),
         .ix(ix),
         .iy(iy),
-        .ox(ox),
-        .oy(oy),
-        .kx(),
-        .ky(),
-        .ifm_tile(tile),
-        .ofm_tile(),
-        .is_pad(),
+        .ifm_addr(ifm_addr),
+        .ofm_addr(ofm_addr),
         .done(done)
     );
 
@@ -67,8 +61,7 @@ module Pooling #(
     logic is_first_read;
 
     always_comb begin
-        ifm_addr    = (tile * img_size + iy) * img_size + ix;
-        ofm_rd_addr = (tile * out_size + oy) * out_size + ox;
+        ofm_rd_addr = ofm_addr;
         ofm_wr_addr = prev_output_addr_2;
         ofm_wr_en   = write_back_2;
     end
@@ -80,7 +73,7 @@ module Pooling #(
         end else begin
             write_back_1 <= !done;
             write_back_2 <= write_back_1;
-            prev_output_addr_1 <= (tile * out_size + oy) * out_size + ox;
+            prev_output_addr_1 <= ofm_addr;
             prev_output_addr_2 <= prev_output_addr_1;
 
             for (integer i = 0; i < 16; i++) begin

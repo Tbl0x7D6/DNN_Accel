@@ -58,8 +58,6 @@ module PostProcess #(
     logic write_back_2;
 
     always_comb begin
-        addr = (tile * out_size + oy) * out_size + ox;
-
         input_rd_addr = addr;
         output_en = write_back_2;
         output_addr = prev_addr_2;
@@ -74,6 +72,7 @@ module PostProcess #(
             done <= 0;
             write_back_1 <= 0;
             write_back_2 <= 0;
+            addr <= 0;
         end else begin
             write_back_1 <= !done;
             write_back_2 <= write_back_1;
@@ -98,6 +97,8 @@ module PostProcess #(
                     end
                 end
             end
+
+            addr <= addr + 1;
         end
     end
 
