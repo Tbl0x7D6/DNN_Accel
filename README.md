@@ -8,7 +8,7 @@ This project is a simple implementation of a Deep Neural Network (DNN) accelerat
 
 During the test, I successfully ran a 7-layer convolutional neural network for handwritten digit recognition.
 
-![Demo](./assets/demo.mp4)
+https://github.com/user-attachments/assets/17c6bdb7-a7a5-437c-9dce-5fe8810be3ed
 
 ## Project Structure
 
